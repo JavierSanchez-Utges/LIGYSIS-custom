@@ -13,6 +13,7 @@ swissprot = /cluster/gjb_lab/2394007/data/all_species/swissprot_rev_Nov21.fasta
 [other]
 stampdir = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/defs/
 mes_sig_t = 0.2
+msa_fmt = stockholm
 [clustering]
 oc_dist = 0.66
 oc_metric = i_rel
