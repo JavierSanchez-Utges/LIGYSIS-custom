@@ -40,9 +40,9 @@ from prointvar.fetchers import download_structure_from_pdbe
 ### DICTIONARIES AND LISTS
 
 arpeggio_suffixes = [
-        "atomtypes", "bs_contacts", "contacts", "specific.sift", 
-        "sift","specific.siftmatch", "siftmatch", "specific.polarmatch",
-        "polarmatch", "ri", "rings", "ari", "amri", "amam", "residue_sifts"
+    "atomtypes", "bs_contacts", "contacts", "specific.sift", 
+    "sift","specific.siftmatch", "siftmatch", "specific.polarmatch",
+    "polarmatch", "ri", "rings", "ari", "amri", "amam", "residue_sifts"
 ]
 
 pdb_clean_suffixes = ["break_residues", "breaks"]
@@ -69,25 +69,35 @@ pdb_resnames = [
 ]
 
 aas = [
-        'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY',
-        'HIS', 'ILE', 'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER',                   ### ONE OF THESE MIGHT BE ENOUGH ###
-        'THR', 'TRP', 'TYR', 'VAL', 'GLX', 'GLI', 'NLE', 'CYC'
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY",
+    "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "PRO", "SER",                   ### ONE OF THESE MIGHT BE ENOUGH ###
+    "THR", "TRP", "TYR", "VAL", "GLX", "GLI", "NLE", "CYC"
+]
+
+aas_1l= [
+    "A", "R", "N", "D", "C", "Q", "E", "G", "H", "I",
+    "L", "K", "M", "F", "P", "S", "T", "W", "Y", "V",
+    "-"
 ]
 
 bbone = ["N", "CA", "C", "O"]
 
 aa_code = {
-        "ALA" : 'A', "CYS" : 'C', "ASP" : 'D', "GLU" : 'E',
-        "PHE" : 'F', "GLY" : 'G', "HIS" : 'H', "ILE" : 'I',
-        "LYS" : 'K', "LEU" : 'L', "MET" : 'M', "ASN" : 'N',
-        "PRO" : 'P', "GLN" : 'Q', "ARG" : 'R', "SER" : 'S',
-        "THR" : 'T', "VAL" : 'V', "TRP" : 'W', "TYR" : 'Y',
-        "PYL" : 'O', "SEC" : 'U', "HYP" : 'P', "CSO" : 'C', # WEIRD ONES
-        "SUI" : 'D',
+    "ALA" : 'A', "CYS" : 'C', "ASP" : 'D', "GLU" : 'E',
+    "PHE" : 'F', "GLY" : 'G', "HIS" : 'H', "ILE" : 'I',
+    "LYS" : 'K', "LEU" : 'L', "MET" : 'M', "ASN" : 'N',
+    "PRO" : 'P', "GLN" : 'Q', "ARG" : 'R', "SER" : 'S',
+    "THR" : 'T', "VAL" : 'V', "TRP" : 'W', "TYR" : 'Y',
+    "PYL" : 'O', "SEC" : 'U', "HYP" : 'P', "CSO" : 'C', # WEIRD ONES
+    "SUI" : 'D',
 }
 
 sample_colors = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#911eb4", "#46f0f0", "#f032e6", "#bcf60c", "#fabebe", "#008080", "#e6beff", "#9a6324", "#fffac8", "#800000", "#aaffc3", "#808000", "#ffd8b1", "#000075", "#808080", "#ffffff", "#000000"]
 #sample_colors = list(itertools.islice(rgbs(), 200)) # new_colours
+
+consvar_class_colours = [
+    "royalblue", "green", "grey", "firebrick", "orange"
+]
 
 ### CONFIG FILE READING AND VARIABLE SAVING
 
@@ -102,15 +112,23 @@ clean_pdb_bin = config["binaries"].get("clean_pdb_bin")
 arpeggio_python_bin = config["binaries"].get("arpeggio_python_bin")
 arpeggio_bin = config["binaries"].get("arpeggio_bin")
 gnomad_vcf = config["dbs"].get("gnomad_vcf")
-swissprot_path = config["dbs"].get("swissprot")
+swissprot_pkl = config["dbs"].get("swissprot_pkl")
+swissprot_path = config["dbs"].get("swissprot_path")
+ensembl_sqlite_path = config["dbs"].get("ensembl_sqlite")
 stampdir = config["other"].get("stampdir")
 oc_dist = float(config["clustering"].get("oc_dist"))
 oc_metric = config["clustering"].get("oc_metric")
 oc_method = config["clustering"].get("oc_method")
 mes_sig_t = float(config["other"].get("mes_sig_t"))
 msa_fmt = config["other"].get("msa_fmt")
+struc_fmt = config["other"].get("struc_fmt")
 stamp_ROI = config["other"].get("stamp_roi")
 arpeggio_dist = float(config["other"].get("arpeggio_dist"))
+n_hmmer_its = int(config["other"].get("n_hmmer_its"))
+MES_t = float(config["thresholds"].get("MES_t"))                            # Missense Enrichment Score threshold to consider a position missense-depleted, or enriched.
+cons_t_h = float(config["thresholds"].get("cons_t_h"))                      # conservation score upper threshold to consider position highly divergent. Currently only working with Shenkin divergence score.
+cons_t_l = float(config["thresholds"].get("cons_t_l"))                      # conservation score lower threshold to consider position highly conserved. Currenyly only working with Shenkin divergence score.
+cons_ts = [cons_t_l, cons_t_h]
 
 ### FUNCTIONS
 
@@ -122,7 +140,7 @@ def dump_pickle(data, f_out):
     """
     with open(f_out, "wb") as f:
         pickle.dump(data, f)
-        
+
 def load_pickle(f_in):
     """
     loads pickle
@@ -166,7 +184,8 @@ def stamp(domains, prefix, out):
     ]
     exit_code = os.system(" ".join(args))
     if exit_code != 0:
-        print(" ".join(args))
+        cmd = " ".join(args)
+        log.error("STAMP did not work with {}".format(cmd))
     return exit_code
 
 def transform(matrix):
@@ -178,7 +197,8 @@ def transform(matrix):
     args = [transform_bin, "-f", matrix, "-het"]
     exit_code = os.system(" ".join(args))
     if exit_code != 0:
-        print(" ".join(args))
+        cmd = " ".join(args)
+        log.error("TRANSFORM did not work with {}".format(cmd))
     return exit_code
 
 def move_supp_files(unsupp_pdbs_dir, supp_pdbs_dir):
@@ -212,7 +232,7 @@ def move_stamp_output(wd, prefix, stamp_out_dir):
         shutil.move(out_from, out_to)
     if os.path.isfile(doms_from):
         shutil.move(doms_from, doms_to)
-        
+
 ## LIGAND FUNCTIONS
 
 def get_lig_data(supp_pdbs_dir, ligs_df_path):
@@ -227,7 +247,8 @@ def get_lig_data(supp_pdbs_dir, ligs_df_path):
         df = PDBXreader(inputfile = struc_path).atoms(format_type = "pdb", excluded=())
         hetatm_df = df.query('group_PDB == "HETATM"')
         ligs = hetatm_df.label_comp_id.unique().tolist()
-        lois = [lig for lig in ligs if lig not in non_relevant]
+        #lois = [lig for lig in ligs if lig not in non_relevant]
+        lois = ligs #currently taking all ligands
         for loi in lois:
             loi_df = hetatm_df.query('label_comp_id == @loi')
             lois_df_un = loi_df.drop_duplicates(["label_comp_id", "label_asym_id"])[["label_comp_id", "label_asym_id", "auth_seq_id"]]
@@ -236,7 +257,7 @@ def get_lig_data(supp_pdbs_dir, ligs_df_path):
     ligs_df = ligs_df[["struc_name","label_comp_id", "label_asym_id", "auth_seq_id"]]
     ligs_df.to_csv(ligs_df_path, index = False)
     return ligs_df
-    
+
 ## SIFTS FUNCTIONS
 
 def get_swissprot(): 
@@ -317,7 +338,8 @@ def run_clean_pdb(pdb_path):
     ]
     exit_code = os.system(" ".join(args))
     if exit_code != 0:
-        print(" ".join(args))
+        cmd = " ".join(args)    
+        log.error("Error running pdb_clean.py: {}".format(cmd))
     return exit_code
 
 def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist):
@@ -326,11 +348,12 @@ def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist):
     """
     args = [
         arpeggio_python_bin, arpeggio_bin, pdb_path, "-s",
-        "RESNAME:{}".format(lig_name), "-i", str(dist),# "-v" removing verbose
+        "RESNAME:{}".format(lig_name), "-i", str(dist), # "-v" removing verbose
     ]
     exit_code = os.system(" ".join(args))
     if exit_code != 0:
-        print(" ".join(args))
+        cmd = " ".join(args)
+        log.error("Error running Arpeggio: {}".format(cmd))
     return exit_code
 
 def move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, strucs, struc2ligs):
@@ -498,7 +521,7 @@ def contact_type(row):
         return "backbone"
     else:
         return "sidechain"
-    
+
 ### FUNCTIONS FOR SITE DEFINITION
 
 def def_bs_oc(results_dir, pdb_files, prot, bs_def_out, attr_out, chimera_script_out, arpeggio_dir, metric = oc_metric, dist = oc_dist, method = oc_method):
@@ -532,8 +555,6 @@ def def_bs_oc(results_dir, pdb_files, prot, bs_def_out, attr_out, chimera_script
         #print(pdb_files)
         pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_files}
         lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
-
-    print(lig_data_df)
     
     write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
     
@@ -673,9 +694,11 @@ def write_bs_files(frag_mean_coords, bs_def_out, attr_out, chimera_script_out):
     frag_mean_coords = frag_mean_coords.dropna()
     frag_mean_coords.binding_site = frag_mean_coords.binding_site.astype(int)
     frag_mean_coords.lig_resnum = frag_mean_coords.lig_resnum.astype(int)
-    chimera_atom_spec = (':'+ frag_mean_coords.lig_resnum.astype(str) +
-                     '.'+ frag_mean_coords.lig_chain +
-                     '&#/name==' + frag_mean_coords.pdb_path)
+    chimera_atom_spec = (
+        ':'+ frag_mean_coords.lig_resnum.astype(str) +
+        '.'+ frag_mean_coords.lig_chain +
+        '&#/name==' + frag_mean_coords.pdb_path
+        )
     frag_mean_coords = frag_mean_coords.assign(chimera_atom_spec = chimera_atom_spec)  
     frag_mean_coords.to_csv(bs_def_out, index = False) # saves table to csv
     write_bs_attribute_file(frag_mean_coords, attr_out)
@@ -711,10 +734,367 @@ def write_chimera_script(chimera_script_out, bs_labels):
     
         out.write('# colour each binding site\n')
         for i in range(0, len(bs_labels)):
-            out.write('colour {} :/binding_site=={}\n'.format(','.join(list(map(str, list(sample_colors[i])))), i))
+            #out.write('colour {} :/binding_site=={}\n'.format(','.join(list(map(str, list(sample_colors[i])))), i))
+            out.write('colour {} :/binding_site=={}\n'.format(sample_colors[i], i))
         out.write("### SOME FORMATTING ###\n")
         out.write("\n".join(cmds))
-    print("Chimera script successfully created!")
+    log.info("Chimera script successfully created")
+
+### CONSERVATION + VARIATION FUNCTIONS
+
+def create_alignment_from_struc(example_struc, fasta_path, pdb_fmt = struc_fmt, n_it = n_hmmer_its, seqdb = swissprot_path):
+    """
+    given an example structure, creates and reformats an MSA
+    """
+    create_fasta_from_seq(get_seq_from_pdb(example_struc, pdb_fmt = pdb_fmt), fasta_path) # CREATES FASTA FILE FROM PDB FILE
+    hits_out = fasta_path.replace("fa", "out")
+    hits_aln = fasta_path.replace("fa", "sto")
+    hits_aln_rf = fasta_path.replace(".fa", "_rf.sto")
+    jackhmmer(fasta_path, hits_out, hits_aln , n_it = n_it, seqdb = seqdb,) # RUNS JACKHAMMER USING AS INPUT THE SEQUENCE FROM THE PDB AND GENERATES ALIGNMENT
+    add_acc2msa(hits_aln, hits_aln_rf)
+
+def get_seq_from_pdb(pdb_path, pdb_fmt = struc_fmt): # MIGHT NEED TO BE MORE SELECTIVE WITH CHAIN, ETC
+    """
+    generates aa sequence string from a pdb coordinates file
+    """
+    struc = PDBXreader(pdb_path).atoms(format_type = pdb_fmt, excluded=())
+    return "".join([aa_code[aa] for aa in struc.query('group_PDB == "ATOM"').drop_duplicates(["auth_seq_id"]).auth_comp_id.tolist()])
+
+def create_fasta_from_seq(seq, out):
+    """
+    saves input sequence to fasta file to use as input for jackhmmer
+    """
+    with open(out, "w+") as fh:
+        fh.write(">query\n{}\n".format(seq))
+
+def jackhmmer(seq, hits_out, hits_aln, n_it = n_hmmer_its, seqdb = swissprot_path):
+    """
+    runs jackhmmer on an input seq for a number of iterations and returns exit code, should be 0 if all is ok
+    """
+    args = ["jackhmmer", "-N", str(n_it), "-o", hits_out, "-A", hits_aln, seq, seqdb]
+    exit_code = os.system(" ".join(args))
+    return exit_code
+
+def add_acc2msa(aln_in, aln_out, fmt_in = msa_fmt):
+    """
+    modifies AC field of jackhmmer alignment in stockholm format.
+    
+    :param aln_in: path of input alignment
+    :type aln_in: str, required
+    :param aln_out: path of output alignment
+    :type aln_in: str, required
+    :param fmt_in: input and output MSA format
+    :type aln_in: str, defaults to stockholm
+    """
+    aln = Bio.SeqIO.parse(aln_in, fmt_in)
+    recs = []
+    for rec in aln:
+        if rec.id == "query":
+            continue
+        else:
+            rec.annotations["accession"] = rec.id.split("|")[1]
+            recs.append(rec)
+    Bio.SeqIO.write(recs, aln_out, fmt_in)
+
+def get_target_prot_cols(msa_in, msa_fmt = msa_fmt): 
+    """
+    returns list of MSA col idx that are popualted on the protein target
+    """
+    seqs = [str(rec.seq) for rec in Bio.SeqIO.parse(msa_in, msa_fmt) if "query" in rec.id]
+    occupied_cols = [i+1 for seq in seqs for i, el in enumerate(seq) if el != "-"]
+    return sorted(list(set(occupied_cols)))
+
+def calculate_shenkin(aln_in, aln_fmt, out = None):
+    """
+    Given an MSA, calculates Shenkin ans occupancy, gap
+    percentage for all columns.
+    """
+    cols = in_columns(aln_in, aln_fmt)
+    scores = []
+    occ = []
+    gaps = []
+    occ_pct = []
+    gaps_pct = []
+    for k, v in cols.items():
+        scores.append(get_shenkin(k, v))
+        stats = (get_stats(v))
+        occ.append(stats[0])
+        gaps.append(stats[1])
+        occ_pct.append(stats[2])
+        gaps_pct.append(stats[3])
+    df = pd.DataFrame(list(zip(list(range(1,len(scores)+1)),scores, occ,gaps, occ_pct, gaps_pct)), columns = ["col", "shenkin", "occ", "gaps", "occ_pct", "gaps_pct"])
+    if out != None:
+        df.to_pickle(out)#, index = False)
+    return df
+
+def get_stats(col):
+    """
+    for a given MSA column, calculates some basic statistics
+    such as column residue occupancy ang gaps
+    """
+    n_seqs = len(col)
+    gaps = col.count("-")
+    occ = n_seqs - gaps
+    occ_pct = round(100*(occ/n_seqs), 2)
+    gaps_pct = round(100-occ_pct, 2)
+    return occ, gaps, occ_pct, gaps_pct
+
+def in_columns(aln_in, infmt):
+    """
+    Returns dictionary in which column idx are the key
+    and a list containing all aas aligned to that column
+    is the value.
+    """
+    aln = Bio.AlignIO.read(aln_in, infmt)
+    n_cols = len(aln[0])
+    cols = {}
+    for col in range(1,n_cols+1):
+        cols[col] = []
+    for row in aln:
+        seq = str(row.seq)
+        for i in range(0,len(seq)):
+            cols[i+1].append(seq[i])
+    return cols
+
+def get_shenkin(i_col, col):
+    """
+    calculates Shenkin score for an MSA column
+    """
+    S = get_entropy(get_freqs(i_col, col))
+    return round((2**S)*6,2)
+
+def get_freqs(i_col, col):
+    """
+    calculates amino acid frequences for a given MSA column
+    """
+    abs_freqs = {
+        "A": 0, "R": 0, "N": 0, "D": 0, "C": 0, "Q": 0, "E": 0, "G": 0, "H": 0, "I": 0,
+        "L": 0, "K": 0, "M": 0, "F": 0, "P": 0, "S": 0, "T": 0, "W": 0, "Y": 0, "V": 0, "-": 0
+    }
+    non_standard_aas = {}
+    for aa in col:
+        aa = aa.upper()
+        if col.count("-") == len(col):
+            abs_freqs["-"] = 1
+            return abs_freqs
+        if aa in aas_1l:
+            abs_freqs[aa] += 1
+        else:
+            if aa not in non_standard_aas:
+                non_standard_aas[aa] = 0
+            non_standard_aas[aa] += 1
+    all_ns_aas = sum(non_standard_aas.values())
+    if all_ns_aas != 0:
+        log.warning("Column {} presents non-standard AAs: {}".format(str(i_col), non_standard_aas))
+    rel_freqs = {k: v/(len(col) - all_ns_aas) for k, v in abs_freqs.items()}
+    return rel_freqs
+
+def get_entropy(freqs):
+    """
+    calculates Shannon's entropy from a set of aa frequencies
+    """
+    S = 0
+    for f in freqs.values():
+        if f != 0:
+            S += f*math.log2(f)
+    return -S
+
+def format_shenkin(shenkin, prot_cols, out = None):
+    """
+    formats conservation dataframe and also
+    calculates two normalised versions of it.
+    """
+    shenkin_filt = shenkin[shenkin.col.isin(prot_cols)].copy()
+    shenkin_filt.index = range(1, len(shenkin_filt) + 1) # CONTAINS SHENKIN SCORE, OCCUPANCY/GAP PROPORTION OF CONSENSUS COLUMNS
+    min_shenkin = min(shenkin_filt.shenkin)
+    max_shenkin = max(shenkin_filt.shenkin)
+    shenkin_filt.loc[:, "rel_norm_shenkin"] = round(100*(shenkin_filt.shenkin - min_shenkin)/(max_shenkin - min_shenkin), 2) # ADDING NEW COLUMNS WITH DIFFERENT NORMALISED SCORES
+    shenkin_filt.loc[:, "abs_norm_shenkin"] = round(100*(shenkin_filt.shenkin - 6)/(120 - 6), 2)
+    if out != None:
+        shenkin_filt.to_pickle(out)#, index = False)
+    return shenkin_filt
+
+def get_human_subset_msa(aln_in, human_msa_out, fmt_in = msa_fmt):
+    """
+    creates a subset MSA containing only human sequences
+    """
+    msa = Bio.AlignIO.read(aln_in, fmt_in)
+    human_recs = []
+    for rec in msa:
+        if "HUMAN" in rec.name:
+            human_recs.append(rec)
+    Bio.SeqIO.write(human_recs, human_msa_out, fmt_in)
+
+def cp_sqlite(wd, og_path = ensembl_sqlite_path):
+    """
+    copies ensembl_cache.sqlite
+    to execution directory.
+    """
+    hidden_var_dir = os.path.join(wd, ".varalign")
+    sqlite_name = os.path.basename(og_path)
+    if not os.path.isdir(hidden_var_dir):
+        os.mkdir(hidden_var_dir)
+    else:
+        pass
+    cp_path = os.path.join(hidden_var_dir, sqlite_name)
+    shutil.copy(og_path, cp_path)
+    return cp_path
+
+def rm_sqlite(cp_path):
+    """
+    removes ensembl_cache.sqlite
+    from execution directory.
+    """
+    hidden_var_dir = os.path.dirname(cp_path)
+    os.remove(cp_path)
+    os.rmdir(hidden_var_dir)
+    
+    #DEF
+
+def format_variant_table(df, col_mask, vep_mask = ["missense_variant"], tab_format = "gnomad"):
+    """
+    Formats variant table, by gettint rid of empty rows that are not human sequences,
+    changning column names and only keeping those variants that are of interest and
+    are present in columns of interest.
+    """
+    df_filt = df.copy(deep = True)
+    df_filt.reset_index(inplace = True)
+    if tab_format == "gnomad":
+        df_filt.columns = [" ".join(col).strip() for col in df_filt.columns.tolist()]
+    df_filt.columns = [col.lower().replace(" ", "_") for col in df_filt.columns.tolist()]
+    df_filt = df_filt[df_filt.source_id.str.contains("HUMAN")]
+    df_filt = df_filt.dropna(subset = ["vep_consequence"])
+    df_filt = df_filt[df_filt.vep_consequence.isin(vep_mask)]
+    df_filt = df_filt[df_filt.alignment_column.isin(col_mask)]
+    return df_filt
+
+def get_missense_df(aln_in, variants_df, shenkin_aln, prot_cols, aln_out, aln_fmt = msa_fmt, get_or = True):
+    """
+    Generates a dataframe for the subset of human sequences with variants
+    mapping to them. Calculates shenkin, and occupancy data, and then
+    enrichment in variants.
+    """
+    variants_aln = generate_subset_aln(aln_in, aln_fmt, variants_df, aln_out)
+    if variants_aln == "":
+        return pd.DataFrame()
+    variants_aln_info = calculate_shenkin(variants_aln, aln_fmt)
+    variants_aln_info = variants_aln_info[variants_aln_info.col.isin(prot_cols)]
+    vars_df = pd.DataFrame(variants_df.alignment_column.value_counts().reindex(prot_cols, fill_value = 0).sort_index()).reset_index()
+    vars_df.index = range(1, len(prot_cols) + 1)
+    vars_df.columns = ["col", "variants"]
+    merged = pd.merge(variants_aln_info, vars_df, on = "col", how = "left")
+    merged.index = range(1, len(vars_df) + 1)
+    merged["shenkin"] = shenkin_aln["shenkin"]
+    merged["rel_norm_shenkin"] = shenkin_aln["rel_norm_shenkin"] 
+    merged["abs_norm_shenkin"] = shenkin_aln["abs_norm_shenkin"]
+    if get_or == True:
+        merged_or = get_OR(merged)
+        return merged_or
+    else:
+        return merged
+
+def generate_subset_aln(aln_in, aln_fmt, df, aln_out = None):
+    """
+    Creates a subset MSA containing only human sequences that present
+    missense variants and returns the path of such MSA.
+    """
+    seqs_ids = df.source_id.unique().tolist()
+    aln = Bio.SeqIO.parse(aln_in, aln_fmt)
+    variant_seqs = [rec for rec in aln if rec.id in seqs_ids]
+    n_variant_seqs = len(variant_seqs)
+    if n_variant_seqs == 0:
+        #log.critical("No variants were found in {}. Finishing here".format(aln_in))
+        return ""
+    else:
+        log.info("There are {} sequences with variants for {}".format(str(n_variant_seqs), aln_in))
+    if aln_out == None:
+        pref, fmt = aln_in.split(".")
+        aln_out =  pref + "_variant_seqs." + fmt
+    Bio.SeqIO.write(variant_seqs, aln_out, aln_fmt)
+    return aln_out
+
+def get_OR(df, variant_col = "variants"):
+    """
+    calculates OR, ln(OR) and associated p-value and CI,
+    given a missense dataframe with variants and occupancy
+    """
+    tot_occ = sum(df.occ)
+    tot_vars = sum(df[variant_col])
+    idx = df.index.tolist()
+    for i in idx:
+        i_occ = df.loc[i,"occ"]
+        i_vars = df.loc[i,variant_col]
+        rest_occ = tot_occ - i_occ
+        rest_vars = tot_vars - i_vars
+        if i_occ == 0:
+            oddsr = np.nan 
+            pval = np.nan
+            se_or = np.nan
+            log.debug("0 occupancy. Returning np.nan")
+        else:
+            if i_vars == 0:
+                i_occ += 0.5
+                i_vars += 0.5
+                rest_occ += 0.5
+                rest_vars += 0.5
+                log.debug("0 variants. Adding 0.5 to each cell")
+            oddsr, pval = stats.fisher_exact([[i_vars, rest_vars], [i_occ, rest_occ]])
+            vals = [i_vars, rest_vars, i_occ, rest_occ]
+            se_or = 1.96*(math.sqrt(sum(list(map((lambda x: 1/x), vals)))))
+        df.loc[i, "oddsratio"] = round(oddsr, 2)
+        df.loc[i, "pvalue"] = round(pval, 2)
+        df.loc[i, "se_OR"] = round(se_or, 2)
+    return df
+
+def add_miss_class(df, miss_df_out = None, cons_col = "shenkin", MES_t = MES_t, cons_t = cons_ts, colours = consvar_class_colours):
+    """
+    Adds two columns to missense dataframe. These columns will put columns
+    into classes according to their divergence and missense enrichment score.
+    It also adds a column that will help colour MSA columns according to their
+    classifications.
+    """
+    for i in df.index:
+        if df.loc[i, cons_col] <= cons_ts[0] and df.loc[i, "oddsratio"] < MES_t:
+            df.loc[i, "miss_class"] = "CMD"
+        elif df.loc[i, cons_col] <= cons_ts[0] and df.loc[i, "oddsratio"] > MES_t:
+            df.loc[i, "miss_class"] = "CME"
+        elif df.loc[i, cons_col] >= cons_ts[1] and df.loc[i, "oddsratio"] < MES_t:
+            df.loc[i, "miss_class"] = "UMD"
+        elif df.loc[i, cons_col] >= cons_ts[1] and df.loc[i, "oddsratio"] > MES_t:
+            df.loc[i, "miss_class"] = "UME"
+        else:
+            df.loc[i, "miss_class"] = "None"
+    coloring = {
+        "CMD": colours[0],
+        "CME": colours[1],
+        "UMD": colours[3],
+        "UME": colours[4],
+        "None": colours[2]
+    }
+    df["miss_color"] =  df.miss_class.map(coloring)
+    
+    if miss_df_out != None:
+        df.to_pickle(miss_df_out)#, index = False)
+    return df
+
+def merge_shenkin_df_and_mapping(shenkin_df, mapping_df, aln_ids):
+    """
+    merges conservation, and variation table with MSA-UniProt
+    mapping table, so conservation and variation data
+    are mapped to UniProt residues.
+    """
+    shenkin_df = shenkin_df.rename(index = str, columns = {"col": "alignment_column"}) # renaming columns to be consistent with other StruVarPi dataframes
+    prot_mapping = mapping_df.copy(deep = True).loc[aln_ids]
+    prot_mapping.columns = prot_mapping.columns.droplevel(1)
+    prot_mapping.reset_index(inplace = True)
+    prot_mapping = prot_mapping.rename_axis(None, axis = "columns")
+    prot_mapping.rename(index = None, columns = {"Alignment": "MSA_column", "Protein_position": "UniProt_ResNum"}, inplace = True)
+    # Merging the VarAlign data to the Pfam alignment to gain conservation and variation data for the whole family...
+    mapped_data = pd.merge(
+        prot_mapping[["MSA_column", "UniProt_ResNum"]], shenkin_df,
+        left_on = "MSA_column", right_on = "alignment_column"
+    ).drop("MSA_column", axis = 1)
+    return mapped_data
 
 ### SETTING UP LOG
 
@@ -729,6 +1109,9 @@ def main(args):
     Main function of the script. Calls all other functions.
     """
     log.info("Logging initiated")
+
+    for arg, value in sorted(vars(args).items()):
+        log.info("Argument %s: %r", arg, value)
 
     input_dir = args.input_dir
     uniprot_id = args.uniprot_id
@@ -768,7 +1151,7 @@ def main(args):
 
     domains_out = os.path.join(results_dir, "{}_stamp.domains".format(input_id))
     if os.path.isfile(domains_out):
-        #log.info("STAMP domains file already exists")
+        log.debug("STAMP domains file already exists")
         pass
     else:
         generate_STAMP_domains(input_dir, domains_out)
@@ -780,7 +1163,7 @@ def main(args):
     last_matrix_path = os.path.join(stamp_out_dir, matrix_file)
 
     if os.path.isfile(last_matrix_path):
-        #log.info("STAMP matrix files already exist")
+        log.debug("STAMP matrix files already exist")
         pass
     else:
         ec = stamp(
@@ -830,16 +1213,16 @@ def main(args):
 
     ### UNIPROT MAPPING SECTION
 
-    swissprot = load_pickle(swissprot_path)
+    swissprot = load_pickle(swissprot_pkl)
     log.info("Swissprot loaded")
 
     pdb_mappings = []
     for struc in strucs:
-         ## DSSP
+        ## DSSP
         dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace("pdb", "csv"))
         if os.path.isfile(dssp_csv):
             dssp_data = pd.read_csv(dssp_csv)
-            #log.info("DSSP data already exists")
+            log.debug("DSSP data already exists")
             pass
         else:
             dssp_data = run_dssp(struc, supp_pdbs_dir, dssp_dir)
@@ -850,7 +1233,7 @@ def main(args):
         struc_mapping_path = os.path.join(sifts_dir, struc.replace(".pdb", ".mapping"))
         if os.path.isfile(struc_mapping_path):
             mapping = pd.read_csv(struc_mapping_path)
-            #log.info("Mapping file for {} already exists".format(struc))
+            log.debug("Mapping file for {} already exists".format(struc))
             pass
         else:
             mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, sifts_dir, swissprot)
@@ -869,7 +1252,7 @@ def main(args):
         clean_pdb_path = pdb_path.replace(".pdb", ".clean.pdb")
         pdb_clean_1 = os.path.join(clean_pdbs_dir, struc.replace(".pdb", ".clean.pdb"))
         if os.path.isfile(pdb_clean_1):
-            #("PDB {} already cleaned".format(struc))
+            log.debug("PDB {} already cleaned".format(struc))
             pass
         else:
             ec = run_clean_pdb(pdb_path)
@@ -892,7 +1275,7 @@ def main(args):
             lig_contacts_2 = os.path.join(supp_pdbs_dir, struc[:-3] + "clean_{}.bs_contacts".format(the_lig))
             
             if os.path.isfile(lig_contacts_1) or os.path.isfile(lig_contacts_2):
-                #("Arpeggio already ran for {} in {}!".format(the_lig, struc))
+                log.debug("Arpeggio already ran for {} in {}!".format(the_lig, struc))
                 continue
 
             ec = run_arpeggio(clean_pdb_path, the_lig)
@@ -927,7 +1310,7 @@ def main(args):
                 continue
             else:
                 lig_cons_split, arpeggio_lig_cons = process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir) ### NOW PROCESSES ALL LIGANDS ###
-                #log.info("Arpeggio output processed for {}!".format(struc))
+                log.debug("Arpeggio output processed for {}!".format(struc))
         ligand_contact = arpeggio_lig_cons["PDB_ResNum"].astype(str)
         ligand_contact_list.append(ligand_contact)
 
@@ -949,17 +1332,171 @@ def main(args):
         def_bs_oc(
             results_dir, pdb_paths, uniprot_id,
             bs_def_out, attr_out, chimera_script_out,
-            arpeggio_dir, 
+            arpeggio_dir,
+            metric = oc_metric, dist = oc_dist, method = oc_method
             )
-        
-        #def_bs_oc(results_dir, pdb_files, prot, bs_def_out, attr_out, chimera_script_out, arpeggio_dir, metric = oc_metric, dist = oc_dist, method = oc_method, alt_fmt = False):
-        print("Binding sites were sucessfully defined!")
+        log.info("Binding sites were sucessfully defined!")
     
     bs_definition = pd.read_csv(bs_def_out)
 
+    ### VARIATION SECTION
 
+    if run_variants:
 
-    
+        example_struc = os.path.join(clean_pdbs_dir, os.listdir(clean_pdbs_dir)[0])
+        fasta_path = os.path.join(varalign_dir, "{}.fa".format(input_id))
+        hits_aln = fasta_path.replace("fa", "sto")
+        hits_aln_rf = fasta_path.replace(".fa", "_rf.sto")
+        shenkin_out = os.path.join(varalign_dir, "{}_shenkin.csv".format(input_id))
+        shenkin_filt_out = os.path.join(varalign_dir, "{}_shenkin_filt.csv".format(input_id))
+
+        if override_variants or not os.path.isfile(hits_aln_rf):
+            create_alignment_from_struc(example_struc, fasta_path)
+            log.info("MSA generated")
+            pass
+        else:
+            log.debug("MSA already generated")
+
+        ### CONSERVATION ANALYSIS
+
+        prot_cols = prot_cols = get_target_prot_cols(hits_aln)
+        shenkin_out = os.path.join(varalign_dir, "{}_rf_shenkin.pkl".format(input_id))
+        if override_variants or not os.path.isfile(shenkin_out):
+            shenkin = calculate_shenkin(hits_aln_rf, "stockholm", shenkin_out)
+            log.info("Conservation data table calculated")
+        else:
+            shenkin = pd.read_pickle(shenkin_out)
+            log.debug("Conservation data table read")
+        
+        shenkin_filt_out = os.path.join(varalign_dir, "{}_rf_shenkin_filt.pkl".format(input_id))
+        if override_variants or not os.path.isfile(shenkin_filt_out):
+            shenkin_filt = format_shenkin(shenkin, prot_cols, shenkin_filt_out)
+            log.info("Conservation data filtered table calculated")
+        else:
+            shenkin_filt = pd.read_pickle(shenkin_filt_out)
+            log.debug("Conservation data filtered table read")
+
+        log.info("Conservation scores calculated for {}".format(input_id))
+
+        aln_obj = Bio.AlignIO.read(hits_aln_rf, msa_fmt) #crashes if target protein is not human!
+        aln_info_path = os.path.join(varalign_dir, "{}_rf_info_table.p.gz".format(input_id))
+        if override_variants or not os.path.isfile(aln_info_path):
+            aln_info = varalign.alignments.alignment_info_table(aln_obj)
+            aln_info.to_pickle(aln_info_path)
+            log.info("MSA info table generated")
+        else:
+            aln_info = pd.read_pickle(aln_info_path)
+            log.debug("MSA info table read")
+        
+        log.info("There are {} sequences in MSA for {}".format(len(aln_info), input_id))
+        
+        indexed_mapping_path = os.path.join(varalign_dir, "{}_rf_mappings.p.gz".format(input_id))
+        if override_variants or not os.path.isfile(indexed_mapping_path):
+            indexed_mapping_table = varalign.align_variants._mapping_table(aln_info) # now contains all species
+            indexed_mapping_table.to_pickle(indexed_mapping_path) # important for merging later on
+            log.info("MSA mapping table was created")
+        else:
+            indexed_mapping_table = pd.read_pickle(indexed_mapping_path)
+            log.debug("MSA mapping table read")    
+
+        aln_info_human = aln_info.query('species == "HUMAN"')
+
+        if len(aln_info_human) > 0:
+            log.info("There are {} HUMAN sequences in the MSA for {}".format(len(aln_info_human), input_id))
+
+            human_hits_msa = os.path.join(varalign_dir, "{}_rf_human.sto".format(input_id))
+
+            if override_variants or not os.path.isfile(human_hits_msa):
+                get_human_subset_msa(hits_aln_rf, human_hits_msa)
+            else:
+                pass
+            ### copy ensemble SQLite to directory where this is being executed
+            cp_path = cp_sqlite(wd)
+            log.info("ENSEMBL_CACHE SQLite copied correctly")
+
+            variant_table_path = os.path.join(varalign_dir, "{}_rf_human_variants.p.gz".format(input_id))
+            if override_variants or not os.path.isfile(variant_table_path):
+                try:
+                    variants_table = varalign.align_variants.align_variants(aln_info_human, path_to_vcf = gnomad_vcf,  include_other_info = False, write_vcf_out = False)     
+                except ValueError as e:
+                    variants_table = pd.DataFrame()
+                    log.warning("No variants were retrieved for {}".format(input_id))
+
+                variants_table.to_pickle(variant_table_path)
+
+            else:
+                variants_table = pd.read_pickle(variant_table_path)
+
+            ### remove ensembl SQLite from directory where this is being executed
+            rm_sqlite(cp_path)
+            log.info("ENSEMBL_CACHE SQLite removed correctly")
+
+            if variants_table.empty: # variant table is empty. E.g., P03915. Only 3 human sequences. They are all mitochondrial (not in gnomAD)
+                pass
+
+            else:
+                # in order to be able to read the vcf and parse the DB, the ensemble.cache.sqlite file must be in the ./.varalign directory
+
+                human_miss_vars = format_variant_table(variants_table, prot_cols) # GET ONLY MISSENSE VARIANTS ROWS
+                human_miss_vars_msa_out = os.path.join(varalign_dir, "{}_rf_human_missense_variants_seqs.sto".format(input_id))
+
+                miss_df_out = os.path.join(results_dir, "{}_missense_df.pkl".format(input_id))
+                
+                if override or not os.path.isfile(miss_df_out): # we leave it as override and not override_variants to fix the wrong pseudocounts
+                    missense_variants_df = get_missense_df(
+                        hits_aln_rf, human_miss_vars,
+                        shenkin_filt, prot_cols, human_miss_vars_msa_out
+                    )
+
+                    if missense_variants_df.empty:
+                        log.info("No missense variants found for MSA of {}".format(input_id))
+                        pass
+
+                    else:
+                        missense_variants_df = add_miss_class(
+                            missense_variants_df, miss_df_out,
+                            cons_col = "abs_norm_shenkin",
+                        )
+                        log.info("Missense dataframe created")
+                else:
+                    missense_variants_df = pd.read_pickle(miss_df_out)
+                    log.debug("Missense dataframe read")
+
+                if missense_variants_df.empty:
+                    pass
+                    log.info("No missense variants found for MSA of {}".format(input_id))  
+                else:
+                    # ADDS COLUMNS FROM MISSENSE DF TO SHENKIN FILT DF, CONSERVATION AND VARIATION DATA ABOUT HUMAN VARIANT SUB MSA
+                    shenkin_filt.loc[:, "human_shenkin"] = missense_variants_df.shenkin
+                    shenkin_filt.loc[:, "human_occ"] = missense_variants_df.occ
+                    shenkin_filt.loc[:, "human_gaps"] = missense_variants_df.gaps
+                    shenkin_filt.loc[:, "human_occ_pct"] = missense_variants_df.occ_pct
+                    shenkin_filt.loc[:, "human_gaps_pct"] = missense_variants_df.gaps_pct
+                    shenkin_filt.loc[:, "variants"] = missense_variants_df.variants
+                    shenkin_filt.loc[:, "oddsratio"] = missense_variants_df.oddsratio
+                    shenkin_filt.loc[:, "pvalue"] = missense_variants_df.pvalue
+                    shenkin_filt.loc[:, "se_OR"] = missense_variants_df.se_OR
+
+        else:
+            log.warning("No human sequences for {}".format(input_id))
+            pass
+
+        shenkin_mapped_out = os.path.join(results_dir, "{}_ress_consvar.pkl".format(input_id))
+        if override or not os.path.isfile(shenkin_mapped_out): # we leave it as override and not override_variants to fix the wrong pseudocounts
+            aln_ids = list(set([seqid[0] for seqid in indexed_mapping_table.index.tolist() if uniprot_id in seqid[0]])) # THIS IS EMPTY IF QUERY SEQUENCE IS NOT FOUND
+            n_aln_ids = len(aln_ids)
+            if n_aln_ids != 1:
+                log.warning("There are {} sequences matching accession for {}".format(str(n_aln_ids), str(input_id)))
+            mapped_data = merge_shenkin_df_and_mapping(shenkin_filt, indexed_mapping_table, aln_ids)
+            mapped_data.to_pickle(shenkin_mapped_out)
+        else:
+            mapped_data = pd.read_pickle(shenkin_mapped_out)
+        log.info("Conservation + variant data obtained for {}".format(input_id))
+    else:
+        log.info("Not running variants for {}".format(input_id))
+
+    log.info("THE END")
+
 
 
 
