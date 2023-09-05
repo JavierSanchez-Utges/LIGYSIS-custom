@@ -9,11 +9,13 @@ arpeggio_python_bin = /cluster/gjb_lab/2394007/miniconda/envs/arpeggio/bin/pytho
 arpeggio_bin = /homes/2394007/SM_VarAlign/arpeggio/arpeggio.py
 [dbs]
 gnomad_vcf = /homes/smacgowan/NOBACK/resources/gnomad/gnomad.exomes.r2.0.1.sites.vcf.gz
-swissprot = /cluster/gjb_lab/2394007/data/all_species/swissprot_rev_Nov21.fasta
+swissprot = /cluster/gjb_lab/2394007/data/all_species/swissprot_rev_Nov21.pkl
 [other]
 stampdir = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/defs/
+stamp_roi = ALL
 mes_sig_t = 0.2
 msa_fmt = stockholm
+arpeggio_dist = 5.0
 [clustering]
 oc_dist = 0.66
 oc_metric = i_rel
