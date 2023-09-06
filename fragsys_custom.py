@@ -3,6 +3,7 @@
 import os
 import re
 import Bio
+import sys
 import math
 import scipy
 import pickle
@@ -185,7 +186,7 @@ def stamp(domains, prefix, out):
     exit_code = os.system(" ".join(args))
     if exit_code != 0:
         cmd = " ".join(args)
-        log.error("STAMP did not work with {}".format(cmd))
+        log.critical("STAMP did not work with {}".format(cmd))
     return exit_code
 
 def transform(matrix):
@@ -198,7 +199,7 @@ def transform(matrix):
     exit_code = os.system(" ".join(args))
     if exit_code != 0:
         cmd = " ".join(args)
-        log.error("TRANSFORM did not work with {}".format(cmd))
+        log.critical("TRANSFORM did not work with {}".format(cmd))
     return exit_code
 
 def move_supp_files(unsupp_pdbs_dir, supp_pdbs_dir):
@@ -238,7 +239,7 @@ def move_stamp_output(wd, prefix, stamp_out_dir):
 def get_lig_data(supp_pdbs_dir, ligs_df_path):
     """
     From a directory containing a set of structurally superimposed pdbs,
-    writes a csv file indicating the name, chain and residue number of the
+    writes a .pkl file indicating the name, chain and residue number of the
     ligand(s) of interest in every pdb.
     """
     ligs_df = pd.DataFrame([])
@@ -255,7 +256,7 @@ def get_lig_data(supp_pdbs_dir, ligs_df_path):
             lois_df_un["struc_name"] = struc
             ligs_df = ligs_df.append(lois_df_un)
     ligs_df = ligs_df[["struc_name","label_comp_id", "label_asym_id", "auth_seq_id"]]
-    ligs_df.to_csv(ligs_df_path, index = False)
+    ligs_df.to_pickle(ligs_df_path)
     return ligs_df
 
 ## SIFTS FUNCTIONS
@@ -339,7 +340,7 @@ def run_clean_pdb(pdb_path):
     exit_code = os.system(" ".join(args))
     if exit_code != 0:
         cmd = " ".join(args)    
-        log.error("Error running pdb_clean.py: {}".format(cmd))
+        log.critical("Error running pdb_clean.py: {}".format(cmd))
     return exit_code
 
 def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist):
@@ -353,7 +354,7 @@ def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist):
     exit_code = os.system(" ".join(args))
     if exit_code != 0:
         cmd = " ".join(args)
-        log.error("Error running Arpeggio: {}".format(cmd))
+        log.critical("Error running Arpeggio: {}".format(cmd))
     return exit_code
 
 def move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, strucs, struc2ligs):
@@ -524,7 +525,7 @@ def contact_type(row):
 
 ### FUNCTIONS FOR SITE DEFINITION
 
-def def_bs_oc(results_dir, pdb_files, prot, bs_def_out, attr_out, chimera_script_out, arpeggio_dir, metric = oc_metric, dist = oc_dist, method = oc_method):
+def def_bs_oc(results_dir, pdb_files, input_id, bs_def_out, attr_out, chimera_script_out, arpeggio_dir, metric = oc_metric, dist = oc_dist, method = oc_method):
     """
     given a set of pdb structures, and other arguments, clusters ligands in space,
     defines binding sites and writes chimera attribute files and chimera script to
@@ -540,7 +541,7 @@ def def_bs_oc(results_dir, pdb_files, prot, bs_def_out, attr_out, chimera_script
     if len(lig_data_df) == 1: #should only happen in the case of only one LOI
         lig_data_df["binding_site"] = 0
     else:
-        dis_out = os.path.join(results_dir, "{}_{}.dis".format(prot, metric))
+        dis_out = os.path.join(results_dir, "{}_{}.dis".format(input_id, metric))
         get_dis_file(lig_data_df, labs, dis_out, metric = metric)
         
         ocout, ec = oc(dis_out, method = method, cut_t = dist)
@@ -558,7 +559,7 @@ def def_bs_oc(results_dir, pdb_files, prot, bs_def_out, attr_out, chimera_script
     
     write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
     
-    return lig_data_df, labs
+    return lig_data_df
 
 def generate_ligs_res_df(arpeggio_dir):
     """
@@ -700,7 +701,7 @@ def write_bs_files(frag_mean_coords, bs_def_out, attr_out, chimera_script_out):
         '&#/name==' + frag_mean_coords.pdb_path
         )
     frag_mean_coords = frag_mean_coords.assign(chimera_atom_spec = chimera_atom_spec)  
-    frag_mean_coords.to_csv(bs_def_out, index = False) # saves table to csv
+    frag_mean_coords.to_pickle(bs_def_out) # saves table to pickle
     write_bs_attribute_file(frag_mean_coords, attr_out)
     bs_labs = frag_mean_coords.binding_site.unique().tolist()
     write_chimera_script(chimera_script_out, bs_labs)
@@ -739,6 +740,26 @@ def write_chimera_script(chimera_script_out, bs_labels):
         out.write("### SOME FORMATTING ###\n")
         out.write("\n".join(cmds))
     log.info("Chimera script successfully created")
+
+def get_residue_bs_membership(cluster_ress):
+    """
+    Returns a dictionary indicating to which ligand binding
+    site each ligand binding residue is found in. A residue
+    might contribute to more than one adjacent binding site.
+    """
+    all_bs_ress = []
+    for v in cluster_ress.values():
+        all_bs_ress.extend(v)
+    all_bs_ress = sorted(list(set(all_bs_ress)))
+    
+    bs_ress_membership_dict = {}
+    for bs_res in all_bs_ress:
+        bs_ress_membership_dict[bs_res] = []
+        for k, v in cluster_ress.items():
+            if bs_res in v:
+                bs_ress_membership_dict[bs_res].append(k) # which binding site each residue belongs to
+    
+    return bs_ress_membership_dict
 
 ### CONSERVATION + VARIATION FUNCTIONS
 
@@ -1133,14 +1154,19 @@ def main(args):
     varalign_dir = os.path.join(output_dir, "varalign")
     
     dirs = [
-        #unsupp_cifs_dir, unsupp_pdbs_dir,
-        output_dir, supp_pdbs_dir,
-        clean_pdbs_dir, stamp_out_dir, results_dir, pdb_clean_dir,
+        output_dir, supp_pdbs_dir, clean_pdbs_dir,
+        stamp_out_dir, results_dir, pdb_clean_dir,
         arpeggio_dir, sifts_dir, dssp_dir, varalign_dir,
-        #figs_dir
-        ]
+    ]
     
     setup_dirs(dirs)
+
+    final_table_out = os.path.join(results_dir, "{}_results_table.pkl".format(input_id))
+    if os.path.isfile(final_table_out) and not override:
+        log.info("Final results table already exists")
+        log.info("Skipping to the end")
+        sys.exit(0)
+
 
     log.info("Directories created")
     strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb") and "clean" not in f]
@@ -1174,7 +1200,7 @@ def main(args):
             log.info("STAMP matrix files generated")
             pass
         else:
-            log.error("Something went wrong with STAMP")
+            log.critical("Something went wrong with STAMP")
         
 
     c = 0 # counting the number of superseded pdbs
@@ -1191,7 +1217,7 @@ def main(args):
         if ec == 0:
             pass
         else:
-            log.error("Something went wrong with TRANSFORM")
+            log.critical("Something went wrong with TRANSFORM")
     
     log.info("STAMP and TRANSFORM completed")
             
@@ -1203,9 +1229,9 @@ def main(args):
 
     ### GET LIGAND DATA
 
-    lig_data_path = os.path.join(results_dir, "{}_lig_data.csv".format(input_id))
+    lig_data_path = os.path.join(results_dir, "{}_lig_data.pkl".format(input_id))
     if os.path.isfile(lig_data_path):
-        ligs_df = pd.read_csv(lig_data_path)
+        ligs_df = pd.read_pickle(lig_data_path)
     else:
         ligs_df = get_lig_data(supp_pdbs_dir, lig_data_path)
 
@@ -1216,32 +1242,43 @@ def main(args):
     swissprot = load_pickle(swissprot_pkl)
     log.info("Swissprot loaded")
 
-    pdb_mappings = []
-    for struc in strucs:
-        ## DSSP
-        dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace("pdb", "csv"))
-        if os.path.isfile(dssp_csv):
-            dssp_data = pd.read_csv(dssp_csv)
-            log.debug("DSSP data already exists")
-            pass
-        else:
-            dssp_data = run_dssp(struc, supp_pdbs_dir, dssp_dir)
-            log.info("DSSP run successfully on {}".format(struc))
+    dssp_mapped_out = os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id))
 
-        ## UNIPROT MAPPING
-        
-        struc_mapping_path = os.path.join(sifts_dir, struc.replace(".pdb", ".mapping"))
-        if os.path.isfile(struc_mapping_path):
-            mapping = pd.read_csv(struc_mapping_path)
-            log.debug("Mapping file for {} already exists".format(struc))
-            pass
-        else:
-            mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, sifts_dir, swissprot)
-            log.info("Mapping file for {} generated".format(struc))
-        
-        mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum")
-        pdb_mappings.append(mapping)
+    if override or not os.path.isfile(dssp_mapped_out):
 
+        mapped_dssps = []
+        for struc in strucs:
+            ## DSSP
+            dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace("pdb", "csv"))
+            if os.path.isfile(dssp_csv):
+                dssp_data = pd.read_csv(dssp_csv)
+                log.debug("DSSP data already exists")
+                pass
+            else:
+                dssp_data = run_dssp(struc, supp_pdbs_dir, dssp_dir)
+                log.info("DSSP run successfully on {}".format(struc))
+
+            ## UNIPROT MAPPING
+            struc_mapping_path = os.path.join(sifts_dir, struc.replace(".pdb", ".mapping"))
+            if os.path.isfile(struc_mapping_path):
+                mapping = pd.read_csv(struc_mapping_path)
+                log.debug("Mapping file for {} already exists".format(struc))
+                pass
+            else:
+                mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, sifts_dir, swissprot)
+                log.info("Mapping file for {} generated".format(struc))
+            
+            mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum")
+            mapped_dssps.append(mapping)
+
+            mapped_dssp_df = pd.concat(mapped_dssps)
+
+            mapped_dssp_df.to_pickle(os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id)))
+            log.info("Saved mapped DSSP data")
+    else:
+        mapped_dssp_df = pd.read_pickle(dssp_mapped_out)
+        log.debug("Loaded mapped DSSP data")
+    
     ### ARPEGGIO PART ###
 
     struc2ligs = {}
@@ -1260,7 +1297,7 @@ def main(args):
                 log.info("PDB {} cleaned".format(struc))
                 pass
             else:
-                log.error("Something went wrong when cleaning {} :(".format(struc[:4]))
+                log.error("Something went wrong when cleaning {}".format(struc))
                 pass
 
         ligs = struc_df.label_comp_id.unique().tolist()
@@ -1291,7 +1328,7 @@ def main(args):
                     elif os.path.isfile(arpeggio_file_old_name_clean):
                         os.rename(arpeggio_file_old_name_clean, arpeggio_file_new_name_clean)
             else:
-                log.error("Something went wrong when running Arpeggio for {} :(".format(struc))
+                log.error("Something went wrong when running Arpeggio for {}".format(struc))
                 pass
 
     move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, strucs, struc2ligs)
@@ -1321,23 +1358,156 @@ def main(args):
     pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
 
     ligs = ligs_df.label_comp_id.unique().tolist()
-    string_name = "{}_BS_def_OC_{}_{}_{}".format(uniprot_id, oc_method, oc_metric, oc_dist)
-    bs_def_out = os.path.join(results_dir, "{}.csv".format(string_name))
+    string_name = "{}_BS_def_OC_{}_{}_{}".format(input_id, oc_method, oc_metric, oc_dist)
+    bs_def_out = os.path.join(results_dir, "{}.pkl".format(string_name))
     attr_out = os.path.join(results_dir, "{}.attr".format(string_name))
     chimera_script_out = os.path.join(results_dir, "{}.com".format(string_name))
     if os.path.isfile(bs_def_out) and os.path.isfile(attr_out) and os.path.isfile(chimera_script_out):
-        log.info("Binding sites already defined!")
+        lig_data_df = pd.read_pickle(bs_def_out)
+        log.info
         pass
     else:
-        def_bs_oc(
-            results_dir, pdb_paths, uniprot_id,
+        lig_data_df = def_bs_oc(
+            results_dir, pdb_paths, input_id,
             bs_def_out, attr_out, chimera_script_out,
             arpeggio_dir,
             metric = oc_metric, dist = oc_dist, method = oc_method
             )
-        log.info("Binding sites were sucessfully defined!")
+        log.info("Binding site definition completed!")
+
+    lig_bs_out = os.path.join(results_dir, "{}_lig_bs.pkl".format(input_id))
+    lig_ress_out = os.path.join(results_dir, "{}_lig_ress.pkl".format(input_id))
+    site_ress_out = os.path.join(results_dir, "{}_site_ress.pkl".format(input_id))
+    res_bss_out = os.path.join(results_dir, "{}_res_bss.pkl".format(input_id))
+
+    if override or not os.path.isfile(lig_bs_out):
+        bs_lig_dict = dict(zip(lig_data_df.lab,lig_data_df.binding_site)) # {ligand_id: binding_site_id}
+        dump_pickle(bs_lig_dict, lig_bs_out)
+        log.info("Saved ligand --> binding site dictionary!")
+    else:
+        bs_lig_dict = load_pickle(lig_bs_out)
+        log.debug("Loaded ligand --> binding site dictionary!")
+
+    if override or not os.path.isfile(lig_ress_out):
+        ligand_ress_dict = dict(zip(lig_data_df.lab,lig_data_df.binding_res)) # {ligand_id: [binding_residues]]}
+        dump_pickle(ligand_ress_dict, lig_ress_out)
+        log.info("Saved ligand --> [binding residues] dictionary!")
+    else:
+        ligand_ress_dict = load_pickle(lig_ress_out)
+        log.debug("Loaded ligand --> [binding residues] dictionary!")
+
+    if override or not os.path.isfile(site_ress_out):
+        site_ress_dict = {}
+        for site_id, site_rows in lig_data_df.groupby("binding_site"):
+            site_ress_dict[site_id] = []
+            for _, site_row in site_rows.iterrows():
+                site_ress_dict[site_id].extend(site_row.binding_res)
+        site_ress_dict = {k: sorted(list(set(v))) for k, v in site_ress_dict.items()} # {binding_site_id: [binding_residues]}
+        dump_pickle(site_ress_dict, site_ress_out)
+        log.info("Saved binding site --> [binding residues] dictionary!")
+    else:
+        site_ress_dict = load_pickle(site_ress_out)
+        log.debug("Loaded binding site --> [binding residues] dictionary!")
+
+    if override or not os.path.isfile(res_bss_out):
+        ress_bss_dict = get_residue_bs_membership(site_ress_dict) #  {residue: [binding_site_ids]}
+        dump_pickle(ress_bss_dict, res_bss_out)
+        log.info("Saved residue --> [binding site ids] dictionary!")
+    else:
+        ress_bss_dict = load_pickle(res_bss_out)
+        log.debug("Loaded residue --> [binding site ids] dictionary!")
+
+    ### DSSP DATA ANALYSIS
+
+    dsspd_filt = mapped_dssp_df.query('UniProt_ResNum == UniProt_ResNum and AA != "X" and RSA == RSA').copy()
+    dsspd_filt.SS = dsspd_filt.SS.fillna("C")
+    dsspd_filt.SS = dsspd_filt.SS.replace("", "C")
+    dsspd_filt.UniProt_ResNum = dsspd_filt.UniProt_ResNum.astype(int)
+
+    AA_dict_out = os.path.join(results_dir, "{}_ress_AA.pkl".format(input_id))
+    RSA_dict_out = os.path.join(results_dir, "{}_ress_RSA.pkl".format(input_id))
+    SS_dict_out = os.path.join(results_dir, "{}_ress_SS.pkl".format(input_id))
+    rsa_profs_out = os.path.join(results_dir, "{}_bss_RSA_profiles.pkl".format(input_id))
+    ss_profs_out = os.path.join(results_dir, "{}_bss_SS_profiles.pkl".format(input_id))
+    aa_profs_out = os.path.join(results_dir, "{}_bss_AA_profiles.pkl".format(input_id))
+
+    if override or not os.path.isfile(AA_dict_out):
+        ress_AA_dict = {
+            up_resnum: dsspd_filt.query('UniProt_ResNum == @up_resnum').AA.mode()[0] # gets dict per UP residue and meore frequent AA.
+            for up_resnum in dsspd_filt.UniProt_ResNum.unique().tolist()
+        }
+        dump_pickle(ress_AA_dict, AA_dict_out)
+        log.info("Saved AA dict")
+    else:
+        ress_AA_dict = load_pickle(AA_dict_out)
+        log.debug("Loaded AA dict")
     
-    bs_definition = pd.read_csv(bs_def_out)
+    if override or not os.path.isfile(RSA_dict_out):
+        ress_RSA_dict = {
+            up_resnum: round(dsspd_filt.query('UniProt_ResNum == @up_resnum').RSA.mean(), 2) # gets dict per UP residue and meore frequent AA.
+            for up_resnum in dsspd_filt.UniProt_ResNum.unique().tolist()
+        }
+        dump_pickle(ress_RSA_dict, RSA_dict_out)
+        log.info("Saved RSA dict")
+    else:
+        ress_RSA_dict = load_pickle(RSA_dict_out)
+        log.debug("Loaded RSA dict")
+
+    if override or not os.path.isfile(SS_dict_out):
+        ress_SS_dict = {
+            up_resnum: dsspd_filt.query('UniProt_ResNum == @up_resnum').SS.mode()[0] # gets dict per UP residue and meore frequent AA.
+            for up_resnum in dsspd_filt.UniProt_ResNum.unique().tolist()
+        }
+        dump_pickle(ress_SS_dict, SS_dict_out)
+        log.info("Saved SS dict")
+    else:
+        ress_SS_dict = load_pickle(SS_dict_out)
+        log.debug("Loaded SS dict")
+
+    if override or not os.path.isfile(rsa_profs_out):
+        rsa_profiles = {}
+        for k, v in site_ress_dict.items():
+            rsa_profiles[k] = []
+            for v2 in v:
+                if v2 in ress_RSA_dict:
+                    rsa_profiles[k].append(ress_RSA_dict[v2])
+                else:
+                    log.warning("Cannot find RSA data for UP residue {} in {}".format(str(v2), input_id))
+        dump_pickle(rsa_profiles, rsa_profs_out)
+        log.info("Saved RSA profiles")
+    else:
+        rsa_profiles = load_pickle(rsa_profs_out)
+        log.debug("Loaded RSA profiles")
+    
+    if override or not os.path.isfile(ss_profs_out):
+        ss_profiles = {}
+        for k, v in site_ress_dict.items():
+            ss_profiles[k] = []
+            for v2 in v:
+                if v2 in ress_SS_dict:
+                    ss_profiles[k].append(ress_SS_dict[v2])
+                else:
+                    log.warning("Cannot find SS data for UP residue {} in {}".format(str(v2), input_id))
+        dump_pickle(ss_profiles, ss_profs_out)
+        log.info("Saved SS profiles")
+    else:
+        ss_profiles = load_pickle(ss_profs_out)
+        log.debug("Loaded SS profiles")
+
+    if override or not os.path.isfile(aa_profs_out):
+        aa_profiles = {}
+        for k, v in site_ress_dict.items():
+            aa_profiles[k] = []
+            for v2 in v:
+                if v2 in ress_AA_dict:
+                    aa_profiles[k].append(ress_AA_dict[v2])
+                else:
+                    log.warning("Cannot find AA data for UP residue {} in {}".format(str(v2), input_id))
+        dump_pickle(aa_profiles, aa_profs_out)
+        log.info("Saved AA profiles")
+    else:
+        aa_profiles = load_pickle(aa_profs_out)
+        log.debug("Loaded AA profiles")
 
     ### VARIATION SECTION
 
@@ -1352,41 +1522,40 @@ def main(args):
 
         if override_variants or not os.path.isfile(hits_aln_rf):
             create_alignment_from_struc(example_struc, fasta_path)
-            log.info("MSA generated")
+            log.info("Saved MSA to file")
             pass
         else:
-            log.debug("MSA already generated")
+            log.debug("Loaded MSA from file")
 
         ### CONSERVATION ANALYSIS
 
         prot_cols = prot_cols = get_target_prot_cols(hits_aln)
+        
         shenkin_out = os.path.join(varalign_dir, "{}_rf_shenkin.pkl".format(input_id))
         if override_variants or not os.path.isfile(shenkin_out):
             shenkin = calculate_shenkin(hits_aln_rf, "stockholm", shenkin_out)
-            log.info("Conservation data table calculated")
+            log.info("Saved conservation data table")
         else:
             shenkin = pd.read_pickle(shenkin_out)
-            log.debug("Conservation data table read")
+            log.debug("Loaded conservation data table")
         
         shenkin_filt_out = os.path.join(varalign_dir, "{}_rf_shenkin_filt.pkl".format(input_id))
         if override_variants or not os.path.isfile(shenkin_filt_out):
             shenkin_filt = format_shenkin(shenkin, prot_cols, shenkin_filt_out)
-            log.info("Conservation data filtered table calculated")
+            log.info("Saved filtered conservation data table")
         else:
             shenkin_filt = pd.read_pickle(shenkin_filt_out)
-            log.debug("Conservation data filtered table read")
-
-        log.info("Conservation scores calculated for {}".format(input_id))
+            log.debug("Loaded filtered conservation data table")
 
         aln_obj = Bio.AlignIO.read(hits_aln_rf, msa_fmt) #crashes if target protein is not human!
         aln_info_path = os.path.join(varalign_dir, "{}_rf_info_table.p.gz".format(input_id))
         if override_variants or not os.path.isfile(aln_info_path):
             aln_info = varalign.alignments.alignment_info_table(aln_obj)
             aln_info.to_pickle(aln_info_path)
-            log.info("MSA info table generated")
+            log.info("Saved MSA info table")
         else:
             aln_info = pd.read_pickle(aln_info_path)
-            log.debug("MSA info table read")
+            log.debug("Loaded MSA info table")
         
         log.info("There are {} sequences in MSA for {}".format(len(aln_info), input_id))
         
@@ -1394,10 +1563,10 @@ def main(args):
         if override_variants or not os.path.isfile(indexed_mapping_path):
             indexed_mapping_table = varalign.align_variants._mapping_table(aln_info) # now contains all species
             indexed_mapping_table.to_pickle(indexed_mapping_path) # important for merging later on
-            log.info("MSA mapping table was created")
+            log.info("Saved MSA mapping table")
         else:
             indexed_mapping_table = pd.read_pickle(indexed_mapping_path)
-            log.debug("MSA mapping table read")    
+            log.debug("Loaded MSA mapping table")    
 
         aln_info_human = aln_info.query('species == "HUMAN"')
 
@@ -1412,7 +1581,7 @@ def main(args):
                 pass
             ### copy ensemble SQLite to directory where this is being executed
             cp_path = cp_sqlite(wd)
-            log.info("ENSEMBL_CACHE SQLite copied correctly")
+            log.debug("ENSEMBL_CACHE SQLite copied correctly")
 
             variant_table_path = os.path.join(varalign_dir, "{}_rf_human_variants.p.gz".format(input_id))
             if override_variants or not os.path.isfile(variant_table_path):
@@ -1429,7 +1598,7 @@ def main(args):
 
             ### remove ensembl SQLite from directory where this is being executed
             rm_sqlite(cp_path)
-            log.info("ENSEMBL_CACHE SQLite removed correctly")
+            log.debug("ENSEMBL_CACHE SQLite removed correctly")
 
             if variants_table.empty: # variant table is empty. E.g., P03915. Only 3 human sequences. They are all mitochondrial (not in gnomAD)
                 pass
@@ -1449,7 +1618,7 @@ def main(args):
                     )
 
                     if missense_variants_df.empty:
-                        log.info("No missense variants found for MSA of {}".format(input_id))
+                        log.warning("No missense variants found for MSA of {}".format(input_id))
                         pass
 
                     else:
@@ -1457,14 +1626,14 @@ def main(args):
                             missense_variants_df, miss_df_out,
                             cons_col = "abs_norm_shenkin",
                         )
-                        log.info("Missense dataframe created")
+                        log.info("Saved missense dataframe")
                 else:
                     missense_variants_df = pd.read_pickle(miss_df_out)
-                    log.debug("Missense dataframe read")
+                    log.debug("Loaded missense dataframe")
 
                 if missense_variants_df.empty:
+                    log.warning("No missense variants found for MSA of {}".format(input_id))
                     pass
-                    log.info("No missense variants found for MSA of {}".format(input_id))  
                 else:
                     # ADDS COLUMNS FROM MISSENSE DF TO SHENKIN FILT DF, CONSERVATION AND VARIATION DATA ABOUT HUMAN VARIANT SUB MSA
                     shenkin_filt.loc[:, "human_shenkin"] = missense_variants_df.shenkin
@@ -1491,7 +1660,19 @@ def main(args):
             mapped_data.to_pickle(shenkin_mapped_out)
         else:
             mapped_data = pd.read_pickle(shenkin_mapped_out)
-        log.info("Conservation + variant data obtained for {}".format(input_id))
+        log.info("Saved conservation + variant data for {}".format(input_id))
+
+        if not mapped_dssp_df.empty:
+            mapped_data["AA"] = mapped_data.UniProt_ResNum.map(ress_AA_dict)
+            mapped_data["RSA"] = mapped_data.UniProt_ResNum.map(ress_RSA_dict)
+            mapped_data["SS"] = mapped_data.UniProt_ResNum.map(ress_SS_dict)
+        else:
+            log.warning("No DSSP data for {}".format(input_id))
+            pass
+
+        mapped_data["binding_sites"] = mapped_data.UniProt_ResNum.map(ress_bss_dict)
+        mapped_data.to_pickle(final_table_out)
+        log.info("Saved final table for {}".format(input_id))
     else:
         log.info("Not running variants for {}".format(input_id))
 
