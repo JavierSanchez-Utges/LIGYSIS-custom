@@ -171,7 +171,7 @@ def generate_STAMP_domains(pdbs_dir, domains_out, roi = stamp_ROI):
     with open(domains_out, "w+") as fh:
         for pdb in os.listdir(pdbs_dir):
             if pdb[-4:] == ".pdb":
-                fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb[:-4], roi))
+                fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb[:-4] + "_" + roi, roi))
 
 def stamp(domains, prefix, out):
     """
@@ -197,16 +197,28 @@ def transform(matrix):
         os.environ["STAMPDIR"] = stampdir
     args = [transform_bin, "-f", matrix, "-het"]
     exit_code = os.system(" ".join(args))
+    cmd = " ".join(args)
     if exit_code != 0:
-        cmd = " ".join(args)
         log.critical("TRANSFORM did not work with {}".format(cmd))
+    else:
+        log.info("TRANSFORM ran with {}".format(cmd))
     return exit_code
 
-def move_supp_files(unsupp_pdbs_dir, supp_pdbs_dir):
+def fnames_from_domains(domains_out):
+        """
+        Returns a list of the pdb file names from the STAMP domains file.
+        """
+        with open(domains_out) as f:
+            lines = f.readlines()
+        fnames = []
+        for line in lines:
+            fnames.append(line.split()[1] + ".pdb")
+        return fnames
+
+def move_supp_files(struc_files, supp_pdbs_dir):
     """
     Moves set of supperimposed coordinate files to appropriate directory.
     """
-    struc_files = os.listdir(unsupp_pdbs_dir)
     cwd = os.getcwd()
     for file in struc_files:
         if os.path.isfile(os.path.join(cwd, file)):
@@ -215,7 +227,7 @@ def move_supp_files(unsupp_pdbs_dir, supp_pdbs_dir):
                 os.path.join(supp_pdbs_dir, file)
             )
 
-def move_stamp_output(wd, prefix, stamp_out_dir):
+def move_stamp_output(prefix, stamp_out_dir):
     """
     Moves STAMP output files to appropriate directory.
     """
@@ -225,14 +237,30 @@ def move_stamp_output(wd, prefix, stamp_out_dir):
         filepath = os.path.join(cwd, file)
         if os.path.isfile(filepath):
             shutil.move(filepath, os.path.join(stamp_out_dir, file))
-    out_from = os.path.join(wd, prefix + ".out")
+    out_from = os.path.join(cwd, prefix + ".out")
     out_to = os.path.join(stamp_out_dir, prefix + ".out")
-    doms_from = os.path.join(wd, prefix + ".domains")
+    doms_from = os.path.join(cwd, prefix + ".domains")
     doms_to = os.path.join(stamp_out_dir, prefix + ".domains")
     if os.path.isfile(out_from):
         shutil.move(out_from, out_to)
     if os.path.isfile(doms_from):
         shutil.move(doms_from, doms_to)
+
+def remove_extra_ligs(supp_file, simple_file):
+        """
+        Removes ligands present in non-ROI chains.
+        """
+        fname = os.path.basename(supp_file)
+        chains_spec = fname.split("_")[1].split(".")[0]
+        df = PDBXreader(inputfile = supp_file).atoms(format_type = "pdb", excluded=())
+        if chains_spec == "ALL":
+            pass
+        else:
+            chains = list(chains_spec)
+            df = df.query('label_asym_id in @chains')
+
+        w = PDBXwriter(outputfile = simple_file)
+        w.run(df, format_type = "pdb", category = "auth")
 
 ## LIGAND FUNCTIONS
 
@@ -317,8 +345,8 @@ def run_dssp(struc, supp_pdbs_dir, dssp_dir):
     """
     Runs DSSP, saves and return resulting output dataframe
     """
-    dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace("pdb", "csv")) # output csv filepath
-    dssp_out = os.path.join(dssp_dir, struc.replace("pdb", "dssp"))
+    dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace(".pdb", ".csv")) # output csv filepath
+    dssp_out = os.path.join(dssp_dir, struc.replace(".pdb", ".dssp"))
     struc_in = os.path.join(supp_pdbs_dir, struc)
     DSSPrunner(inputfile = struc_in, outputfile = dssp_out).write()            # runs DSSP
     dssp_data = DSSPreader(inputfile = dssp_out).read()            # reads DSSP output
@@ -386,14 +414,14 @@ def move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_
 
 def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir):
     """
-    processes arpeggio output to generate the two tables that will
-    be used later in the analysis
+    Processes arpeggio output to generate the two tables that will
+    be used later in the analysis.
     """
     lig_cons_splits = []
     arpeggio_lig_conss = []
         
     for lig in all_ligs:
-        arpeggio_out_path_lig = os.path.join(arpeggio_dir, struc.replace("pdb", "clean_{}.bs_contacts".format(lig)))
+        arpeggio_out_path_lig = os.path.join(arpeggio_dir, struc.replace(".pdb", ".clean_{}.bs_contacts".format(lig)))
         
         all_cons_lig = pd.read_table(arpeggio_out_path_lig, header = None)
 
@@ -481,7 +509,7 @@ def add_resnames_to_arpeggio_table(structure, clean_pdbs_dir, arpeggio_cons_spli
     """
     adds residue names to arpeggio table, needed for later table mergings
     """
-    structure_path = os.path.join(clean_pdbs_dir, structure.replace("pdb", "clean.pdb"))
+    structure_path = os.path.join(clean_pdbs_dir, structure.replace(".pdb", ".clean.pdb"))
     pdb_structure = PDBXreader(inputfile = structure_path).atoms(format_type = "pdb", excluded=())
     resnames_dict = {(row.label_asym_id, int(row.label_seq_id)): row.label_comp_id for index, row in pdb_structure.drop_duplicates(['label_asym_id', 'label_seq_id']).iterrows()}
     arpeggio_cons_split["ResName (Atom1)"] = arpeggio_cons_split.set_index(["Chain (Atom1)", "ResNum (Atom1)"]).index.map(resnames_dict.get)
@@ -538,6 +566,8 @@ def def_bs_oc(results_dir, pdb_files, input_id, bs_def_out, attr_out, chimera_sc
     """
     lig_data_df, labs = generate_ligs_res_df(arpeggio_dir)
 
+    print(lig_data_df, labs)
+
     if len(lig_data_df) == 1: #should only happen in the case of only one LOI
         lig_data_df["binding_site"] = 0
     else:
@@ -553,9 +583,12 @@ def def_bs_oc(results_dir, pdb_files, input_id, bs_def_out, attr_out, chimera_sc
                 
         lig_data_df["lab"] = labs 
         lig_data_df["binding_site"] = lig_data_df.lab.map(cluster_id_dict)
-        #print(pdb_files)
+        print(pdb_files)
         pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_files}
         lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
+
+    print(lig_data_df)
+    #sys.exit()
     
     write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
     
@@ -570,7 +603,8 @@ def generate_ligs_res_df(arpeggio_dir):
     lig_files = sorted([file for file in os.listdir(arpeggio_dir) if file.startswith("arpeggio_all_cons_split")])
     file_ids, ligs, resnums, chains, ligs_ress = [[], [], [], [], []]
     for file in lig_files:
-        file_id = file.split("_")[-1].split(".")[0]
+        comps = file.split("_")
+        file_id = "{}_{}".format(comps[-2], comps[-1].split(".")[0]) # CAREFUL WITH THIS ID
         df = pd.read_csv(os.path.join(arpeggio_dir, file))
         for lig, lig_df in df.groupby(["ResName (Atom2)", "ResNum (Atom2)", "Chain (Atom2)"]):
             lig_ress = lig_df["UniProt_Resnum"].unique().tolist()
@@ -768,8 +802,8 @@ def create_alignment_from_struc(example_struc, fasta_path, pdb_fmt = struc_fmt, 
     given an example structure, creates and reformats an MSA
     """
     create_fasta_from_seq(get_seq_from_pdb(example_struc, pdb_fmt = pdb_fmt), fasta_path) # CREATES FASTA FILE FROM PDB FILE
-    hits_out = fasta_path.replace("fa", "out")
-    hits_aln = fasta_path.replace("fa", "sto")
+    hits_out = fasta_path.replace(".fa", ".out")
+    hits_aln = fasta_path.replace(".fa", ".sto")
     hits_aln_rf = fasta_path.replace(".fa", "_rf.sto")
     jackhmmer(fasta_path, hits_out, hits_aln , n_it = n_it, seqdb = seqdb,) # RUNS JACKHAMMER USING AS INPUT THE SEQUENCE FROM THE PDB AND GENERATES ALIGNMENT
     add_acc2msa(hits_aln, hits_aln_rf)
@@ -1067,7 +1101,7 @@ def get_OR(df, variant_col = "variants"):
         df.loc[i, "se_OR"] = round(se_or, 2)
     return df
 
-def add_miss_class(df, miss_df_out = None, cons_col = "shenkin", MES_t = MES_t, cons_t = cons_ts, colours = consvar_class_colours):
+def add_miss_class(df, miss_df_out = None, cons_col = "shenkin", MES_t = MES_t, cons_ts = cons_ts, colours = consvar_class_colours):
     """
     Adds two columns to missense dataframe. These columns will put columns
     into classes according to their divergence and missense enrichment score.
@@ -1140,12 +1174,16 @@ def main(args):
     override_variants = args.override_variants
     run_variants = args.variants
 
-    input_id = input_dir.split("/")[-1]
-    output_dir = "./output/{}".format(input_id)
+    input_id = os.path.normpath(input_dir).split(os.sep)[-1]
+
+    wd = os.getcwd()
+
+    output_dir = os.path.join(wd, "output", "{}".format(input_id))
 
     supp_pdbs_dir = os.path.join(output_dir, "supp_pdbs")
     clean_pdbs_dir = os.path.join(output_dir, "clean_pdbs")
     stamp_out_dir = os.path.join(output_dir, "stamp_out")
+    simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
     results_dir = os.path.join(output_dir, "results")
     sifts_dir = os.path.join(output_dir, "sifts")
     dssp_dir = os.path.join(output_dir, "dssp")
@@ -1155,11 +1193,13 @@ def main(args):
     
     dirs = [
         output_dir, supp_pdbs_dir, clean_pdbs_dir,
-        stamp_out_dir, results_dir, pdb_clean_dir,
+        stamp_out_dir, results_dir, pdb_clean_dir, simple_pdbs_dir,
         arpeggio_dir, sifts_dir, dssp_dir, varalign_dir,
     ]
     
     setup_dirs(dirs)
+
+    log.info("Directories created")
 
     final_table_out = os.path.join(results_dir, "{}_results_table.pkl".format(input_id))
     if os.path.isfile(final_table_out) and not override:
@@ -1167,8 +1207,6 @@ def main(args):
         log.info("Skipping to the end")
         sys.exit(0)
 
-
-    log.info("Directories created")
     strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb") and "clean" not in f]
     n_strucs = len(strucs)
     log.info("Number of structures: {}".format(n_strucs))
@@ -1184,8 +1222,9 @@ def main(args):
         log.info("STAMP domains file generated")
 
     prefix = "{}_stamp".format(input_id)
-    matrix_file = prefix + "." + str(n_strucs-1)
-
+    n_domains = len(open(domains_out).readlines())
+    log.info("Number of domains: {}".format(str(n_domains)))
+    matrix_file = prefix + "." + str(n_domains-1)
     last_matrix_path = os.path.join(stamp_out_dir, matrix_file)
 
     if os.path.isfile(last_matrix_path):
@@ -1202,17 +1241,18 @@ def main(args):
         else:
             log.critical("Something went wrong with STAMP")
         
+    fnames = fnames_from_domains(domains_out)
 
     c = 0 # counting the number of superseded pdbs
-    for file in strucs:
+    for file in fnames:
         if os.path.isfile(os.path.join(supp_pdbs_dir, file)): # only when they alaready have been transformed
             c += 1
-    if c == n_strucs:
-        log.info("All structures already are superposed")
+    if c == n_domains:
+        log.info("All structure domains already are superposed")
         pass
     else:
         if not os.path.isfile(matrix_file): # RUNNING TRANSFORM ONCE STAMP OUTPUT HAS BEEN MOVED TO STAMP_OUT_DIR
-            matrix_file = os.path.join(stamp_out_dir, prefix + "." + str(n_strucs-1))
+            matrix_file = os.path.join(stamp_out_dir, prefix + "." + str(n_domains-1)) # needs to change to accommodate for how many domains in .domains file 
         ec = transform(matrix_file) #running transform with matrix on cwd
         if ec == 0:
             pass
@@ -1220,12 +1260,27 @@ def main(args):
             log.critical("Something went wrong with TRANSFORM")
     
     log.info("STAMP and TRANSFORM completed")
-            
-    move_supp_files(input_dir, supp_pdbs_dir)
+    
+    move_supp_files(fnames, supp_pdbs_dir)
 
-    wd = os.getcwd()
+    move_stamp_output(prefix, stamp_out_dir)
 
-    move_stamp_output(wd, prefix, stamp_out_dir)
+    n_simple_pdbs = len(os.listdir(simple_pdbs_dir))
+
+    if n_simple_pdbs == n_domains:
+        log.debug("Structure domains already simplified")
+        pass
+    else:
+        for file in os.listdir(supp_pdbs_dir):
+            if file.endswith(".pdb"):
+                supp_file = os.path.join(supp_pdbs_dir, file)
+                simple_file = os.path.join(simple_pdbs_dir, file) 
+                if os.path.isfile(simple_file):
+                    log.debug("Simple pdb file already exists")
+                    pass
+                else:
+                    remove_extra_ligs(supp_file, simple_file)
+        log.info("All structure domains have been simplified")
 
     ### GET LIGAND DATA
 
@@ -1233,7 +1288,7 @@ def main(args):
     if os.path.isfile(lig_data_path):
         ligs_df = pd.read_pickle(lig_data_path)
     else:
-        ligs_df = get_lig_data(supp_pdbs_dir, lig_data_path)
+        ligs_df = get_lig_data(simple_pdbs_dir, lig_data_path)
 
     log.info("Ligand data retrieved")
 
@@ -1247,15 +1302,15 @@ def main(args):
     if override or not os.path.isfile(dssp_mapped_out):
 
         mapped_dssps = []
-        for struc in strucs:
+        for struc in fnames:
             ## DSSP
-            dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace("pdb", "csv"))
+            dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace(".pdb", ".csv"))
             if os.path.isfile(dssp_csv):
                 dssp_data = pd.read_csv(dssp_csv)
                 log.debug("DSSP data already exists")
                 pass
             else:
-                dssp_data = run_dssp(struc, supp_pdbs_dir, dssp_dir)
+                dssp_data = run_dssp(struc, simple_pdbs_dir, dssp_dir)
                 log.info("DSSP run successfully on {}".format(struc))
 
             ## UNIPROT MAPPING
@@ -1265,13 +1320,15 @@ def main(args):
                 log.debug("Mapping file for {} already exists".format(struc))
                 pass
             else:
-                mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, sifts_dir, swissprot)
+                mapping = retrieve_mapping_from_struc(struc, uniprot_id, simple_pdbs_dir, sifts_dir, swissprot)
                 log.info("Mapping file for {} generated".format(struc))
             
             mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum")
             mapped_dssps.append(mapping)
 
             mapped_dssp_df = pd.concat(mapped_dssps)
+
+            print(mapped_dssp_df.shape)
 
             mapped_dssp_df.to_pickle(os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id)))
             log.info("Saved mapped DSSP data")
@@ -1282,13 +1339,13 @@ def main(args):
     ### ARPEGGIO PART ###
 
     struc2ligs = {}
-    for struc in strucs:
+    for struc in fnames:
         struc2ligs[struc] = []
         struc_df = ligs_df.query('struc_name == @struc')
-        pdb_path = os.path.join(supp_pdbs_dir, struc)
+        pdb_path = os.path.join(simple_pdbs_dir, struc)
         clean_pdb_path = pdb_path.replace(".pdb", ".clean.pdb")
         pdb_clean_1 = os.path.join(clean_pdbs_dir, struc.replace(".pdb", ".clean.pdb"))
-        if os.path.isfile(pdb_clean_1):
+        if os.path.isfile(pdb_clean_1) or os.path.isfile(clean_pdb_path):
             log.debug("PDB {} already cleaned".format(struc))
             pass
         else:
@@ -1309,7 +1366,7 @@ def main(args):
                 clean_pdb_path = pdb_clean_1
 
             lig_contacts_1 = os.path.join(arpeggio_dir, struc[:-3] + "clean_{}.bs_contacts".format(the_lig))
-            lig_contacts_2 = os.path.join(supp_pdbs_dir, struc[:-3] + "clean_{}.bs_contacts".format(the_lig))
+            lig_contacts_2 = os.path.join(simple_pdbs_dir, struc[:-3] + "clean_{}.bs_contacts".format(the_lig))
             
             if os.path.isfile(lig_contacts_1) or os.path.isfile(lig_contacts_2):
                 log.debug("Arpeggio already ran for {} in {}!".format(the_lig, struc))
@@ -1319,8 +1376,8 @@ def main(args):
             if ec == 0:
                 log.info("Arpeggio ran sucessfully for {} in {}!".format(the_lig, struc))
                 for arpeggio_suff in arpeggio_suffixes: # CHANGES ARPEGGIO OUTPUT FILENAMES SO THEY INCLUDE LIGAND NAME
-                    arpeggio_file_old_name_supp = os.path.join(supp_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
-                    arpeggio_file_new_name_supp = os.path.join(supp_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
+                    arpeggio_file_old_name_supp = os.path.join(simple_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
+                    arpeggio_file_new_name_supp = os.path.join(simple_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
                     arpeggio_file_old_name_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
                     arpeggio_file_new_name_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
                     if os.path.isfile(arpeggio_file_old_name_supp):
@@ -1330,11 +1387,13 @@ def main(args):
             else:
                 log.error("Something went wrong when running Arpeggio for {}".format(struc))
                 pass
+    
+    #print(struc2ligs)
 
-    move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, strucs, struc2ligs)
+    move_arpeggio_output(simple_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, fnames, struc2ligs)
 
     ligand_contact_list = []
-    for struc in strucs:
+    for struc in fnames:
         all_ligs = ligs_df.query('struc_name == @struc').label_comp_id.unique().tolist()
         arpeggio_out1 = os.path.join(arpeggio_dir, "arpeggio_all_cons_split_" + struc.replace(".pdb", ".csv")) # output file 1
         arpeggio_out2 = os.path.join(arpeggio_dir,  "arpeggio_lig_cons_" + struc.replace(".pdb", ".csv")) # output file 2
@@ -1418,7 +1477,8 @@ def main(args):
         log.debug("Loaded residue --> [binding site ids] dictionary!")
 
     ### DSSP DATA ANALYSIS
-
+    #print(mapped_dssp_df.columns.tolist())
+    #assert mapped_dssp_df.UniProt_ResNum.equals(mapped_dssp_df.PDB_ResNum)  
     dsspd_filt = mapped_dssp_df.query('UniProt_ResNum == UniProt_ResNum and AA != "X" and RSA == RSA').copy()
     dsspd_filt.SS = dsspd_filt.SS.fillna("C")
     dsspd_filt.SS = dsspd_filt.SS.replace("", "C")
@@ -1515,12 +1575,13 @@ def main(args):
 
         example_struc = os.path.join(clean_pdbs_dir, os.listdir(clean_pdbs_dir)[0])
         fasta_path = os.path.join(varalign_dir, "{}.fa".format(input_id))
-        hits_aln = fasta_path.replace("fa", "sto")
+        hits_aln = fasta_path.replace(".fa", ".sto")
         hits_aln_rf = fasta_path.replace(".fa", "_rf.sto")
         shenkin_out = os.path.join(varalign_dir, "{}_shenkin.csv".format(input_id))
         shenkin_filt_out = os.path.join(varalign_dir, "{}_shenkin_filt.csv".format(input_id))
 
         if override_variants or not os.path.isfile(hits_aln_rf):
+            print(example_struc, fasta_path)
             create_alignment_from_struc(example_struc, fasta_path)
             log.info("Saved MSA to file")
             pass
@@ -1678,9 +1739,6 @@ def main(args):
 
     log.info("THE END")
 
-
-
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description = "Clusters ligands, define, and characterise binding sites.")
@@ -1693,4 +1751,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args)
-

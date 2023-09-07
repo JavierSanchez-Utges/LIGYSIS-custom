@@ -1,4 +1,6 @@
 input/
 output/
 .ipynb_checkpoints/
-__pycache__
+__pycache__/
+simplifying_pdb.ipynb
+chain_format_domains_file.ipynb
