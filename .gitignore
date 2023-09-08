@@ -4,3 +4,7 @@ output/
 __pycache__/
 simplifying_pdb.ipynb
 chain_format_domains_file.ipynb
+running_fragsys.ipynb
+fragsys_custom_exploring.ipynb
+fragsys.py
+fragsys_main.py
