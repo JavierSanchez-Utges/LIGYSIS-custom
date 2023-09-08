@@ -117,9 +117,9 @@ swissprot_pkl = config["dbs"].get("swissprot_pkl")
 swissprot_path = config["dbs"].get("swissprot_path")
 ensembl_sqlite_path = config["dbs"].get("ensembl_sqlite")
 stampdir = config["other"].get("stampdir")
-oc_dist = float(config["clustering"].get("oc_dist"))
-oc_metric = config["clustering"].get("oc_metric")
-oc_method = config["clustering"].get("oc_method")
+clust_dist = float(config["clustering"].get("clust_dist"))
+clust_metric = config["clustering"].get("clust_metric")
+clust_method = config["clustering"].get("clust_method")
 mes_sig_t = float(config["other"].get("mes_sig_t"))
 msa_fmt = config["other"].get("msa_fmt")
 struc_fmt = config["other"].get("struc_fmt")
@@ -183,11 +183,9 @@ def stamp(domains, prefix, out):
         stamp_bin, "-l", domains, "-rough", "-n",
         str(2), "-prefix", prefix, ">", out
     ]
-    exit_code = os.system(" ".join(args))
-    if exit_code != 0:
-        cmd = " ".join(args)
-        log.critical("STAMP did not work with {}".format(cmd))
-    return exit_code
+    cmd = " ".join(args)
+    exit_code = os.system(cmd)
+    return cmd, exit_code
 
 def transform(matrix):
     """
@@ -196,13 +194,9 @@ def transform(matrix):
     if "STAMPDIR" not in os.environ:
         os.environ["STAMPDIR"] = stampdir
     args = [transform_bin, "-f", matrix, "-het"]
-    exit_code = os.system(" ".join(args))
     cmd = " ".join(args)
-    if exit_code != 0:
-        log.critical("TRANSFORM did not work with {}".format(cmd))
-    else:
-        log.info("TRANSFORM ran with {}".format(cmd))
-    return exit_code
+    exit_code = os.system(cmd)
+    return cmd, exit_code
 
 def fnames_from_domains(domains_out):
         """
@@ -365,11 +359,9 @@ def run_clean_pdb(pdb_path):
     args = [
         clean_pdb_python_bin, clean_pdb_bin, pdb_path
     ]
-    exit_code = os.system(" ".join(args))
-    if exit_code != 0:
-        cmd = " ".join(args)    
-        log.critical("Error running pdb_clean.py: {}".format(cmd))
-    return exit_code
+    cmd = " ".join(args)
+    exit_code = os.system(cmd)
+    return cmd, exit_code
 
 def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist):
     """
@@ -379,11 +371,9 @@ def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist):
         arpeggio_python_bin, arpeggio_bin, pdb_path, "-s",
         "RESNAME:{}".format(lig_name), "-i", str(dist), # "-v" removing verbose
     ]
-    exit_code = os.system(" ".join(args))
-    if exit_code != 0:
-        cmd = " ".join(args)
-        log.critical("Error running Arpeggio: {}".format(cmd))
-    return exit_code
+    cmd = " ".join(args)
+    exit_code = os.system(cmd)
+    return cmd, exit_code
 
 def move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, strucs, struc2ligs):
     """
@@ -553,46 +543,39 @@ def contact_type(row):
 
 ### FUNCTIONS FOR SITE DEFINITION
 
-def def_bs_oc(results_dir, pdb_files, input_id, bs_def_out, attr_out, chimera_script_out, arpeggio_dir, metric = oc_metric, dist = oc_dist, method = oc_method):
-    """
-    given a set of pdb structures, and other arguments, clusters ligands in space,
-    defines binding sites and writes chimera attribute files and chimera script to
-    format the superimposed structures to facilitate visualisation
+# def def_bs_oc(results_dir, pdb_files, input_id, bs_def_out, attr_out, chimera_script_out, arpeggio_dir, metric = clust_metric, dist = clust_dist, method = clust_method):
+#     """
+#     given a set of pdb structures, and other arguments, clusters ligands in space,
+#     defines binding sites and writes chimera attribute files and chimera script to
+#     format the superimposed structures to facilitate visualisation
     
-    alt_fmt is a boolean I added so it works with slightly different input. Still PDB
-    files, but some which coordinates were transformed using PDBe-KB transformation
-    matrices. They have different nomenclature and therefore indices to get pdb_files_dict
-    must be different
-    """
-    lig_data_df, labs = generate_ligs_res_df(arpeggio_dir)
+#     alt_fmt is a boolean I added so it works with slightly different input. Still PDB
+#     files, but some which coordinates were transformed using PDBe-KB transformation
+#     matrices. They have different nomenclature and therefore indices to get pdb_files_dict
+#     must be different
+#     """
+#     lig_data_df= generate_ligs_res_df(arpeggio_dir)
 
-    print(lig_data_df, labs)
-
-    if len(lig_data_df) == 1: #should only happen in the case of only one LOI
-        lig_data_df["binding_site"] = 0
-    else:
-        dis_out = os.path.join(results_dir, "{}_{}.dis".format(input_id, metric))
-        get_dis_file(lig_data_df, labs, dis_out, metric = metric)
+#     if len(lig_data_df) == 1: #should only happen in the case of only one LOI
+#         lig_data_df["binding_site"] = 0
+#     else:
+#         dis_out = os.path.join(results_dir, "{}_{}.dis".format(input_id, metric))
+#         get_dis_file(lig_data_df, dis_out, metric = metric)
         
-        ocout, ec = oc(dis_out, method = method, cut_t = dist)
-        oc_dict = oc2dict(ocout)
-        cluster_id_dict = {}
-        for k, v in oc_dict.items():
-            for member in v["members"]:
-                cluster_id_dict[member] = v["new_id"]
+#         ocout, ec = oc(dis_out, method = method, cut_t = dist)
+#         oc_dict = oc2dict(ocout)
+#         cluster_id_dict = {}
+#         for k, v in oc_dict.items():
+#             for member in v["members"]:
+#                 cluster_id_dict[member] = v["new_id"]
                 
-        lig_data_df["lab"] = labs 
-        lig_data_df["binding_site"] = lig_data_df.lab.map(cluster_id_dict)
-        print(pdb_files)
-        pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_files}
-        lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
-
-    print(lig_data_df)
-    #sys.exit()
+#         lig_data_df["binding_site"] = lig_data_df.lab.map(cluster_id_dict)
+#         pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_files}
+#         lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
     
-    write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
+#     write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
     
-    return lig_data_df
+#     return lig_data_df
 
 def generate_ligs_res_df(arpeggio_dir):
     """
@@ -615,17 +598,20 @@ def generate_ligs_res_df(arpeggio_dir):
             ligs_ress.append(lig_ress)
     lig_data_df = pd.DataFrame(list(zip(file_ids, ligs, resnums, chains, ligs_ress)), columns = ["pdb_id", "lig_name", "lig_resnum", "lig_chain", "binding_res"])
     labs = [file_ids[i] + "_" + str(ligs[i]) + "_" + str(resnums[i]) + "_" + str(chains[i]) for i in range(len(ligs))]
-    return lig_data_df, labs
+    lig_data_df["lab"] = labs
+    return lig_data_df
 
-def get_dis_file(lig_data_df, labs, out, metric = oc_metric):
+def get_dis_file(lig_data_df, out, metric = clust_metric):
     """
     Creates .dis file to be fed to OC.
     """
     lig_res = lig_data_df.binding_res.tolist() #this is a list of lists, each list contains residue numbers interacting with ligand
+    labs = lig_data_df.lab.tolist()
     if metric == "i_rel":
         intersect_dict = get_intersect_rel_matrix(lig_res)
     elif metric == "i_abs":
         intersect_dict = get_intersect_matrix(lig_res)
+        
     n_ligs = len(lig_res)
     with open(out, "w+") as fh:
         fh.write(str(n_ligs) + "\n")
@@ -680,47 +666,47 @@ def intersection(l1, l2):
     I = len(list(set(l1).intersection(l2)))
     return I
 
-def oc(oc_in, type_mat = "sim", method = oc_method, cut_t = oc_dist):
-    """
-    Runs OC and returns exit code, should be 0 if all is OK.
-    """
-    oc_out = oc_in.replace(".dis", "_{}_{}_cut_{}.ocout".format(type_mat, method, cut_t))
-    args = [
-        "/homes/2394007/oc", type_mat, method, "id", "cut", str(cut_t),
-        "ps", oc_out[:-6], "<", oc_in, ">", oc_out
-    ]
-    exit_code = os.system(" ".join(args))
-    return oc_out, exit_code
+# def oc(oc_in, type_mat = "sim", method = clust_method, cut_t = clust_dist):
+#     """
+#     Runs OC and returns exit code, should be 0 if all is OK.
+#     """
+#     oc_out = oc_in.replace(".dis", "_{}_{}_cut_{}.ocout".format(type_mat, method, cut_t))
+#     args = [
+#         "/homes/2394007/oc", type_mat, method, "id", "cut", str(cut_t),
+#         "ps", oc_out[:-6], "<", oc_in, ">", oc_out
+#     ]
+#     exit_code = os.system(" ".join(args))
+#     return oc_out, exit_code
 
-def oc2dict(ocout):
-    """
-    Parses OC output to generate dict.
-    """
-    oc_dict = {}
-    re_cluster = re.compile("""##\s+(\d+)\s(\d+\.*\d*)\s(\d+)\s*""")
-    with open (ocout, "r") as fh:
-        s = 0
-        n_singleton = 0
-        n_cluster = 0
-        for line in fh:
-            if s == 0:
-                if line.startswith("##"):
-                    m = re_cluster.match(line)
-                    cluster_id, score, cluster_size = m.groups()
-                    oc_dict[cluster_id] = {"score": float(score), "size": int(cluster_size), "new_id": n_cluster}
-                    n_cluster += 1
-                elif line.startswith(" "):
-                    oc_dict[cluster_id]["members"] = line.strip().split(" ")
-                else:
-                    if line.strip() == "":
-                        pass
-                    elif line.strip() == "UNCLUSTERED ENTITIES":
-                        s = 1
-            else:
-                oc_dict["singleton_{}".format(n_singleton)] = {"score": "", "size": 1, "members": [line.strip(),], "new_id": n_cluster}
-                n_singleton += 1
-                n_cluster += 1
-    return oc_dict
+# def oc2dict(ocout):
+#     """
+#     Parses OC output to generate dict.
+#     """
+#     oc_dict = {}
+#     re_cluster = re.compile("""##\s+(\d+)\s(\d+\.*\d*)\s(\d+)\s*""")
+#     with open (ocout, "r") as fh:
+#         s = 0
+#         n_singleton = 0
+#         n_cluster = 0
+#         for line in fh:
+#             if s == 0:
+#                 if line.startswith("##"):
+#                     m = re_cluster.match(line)
+#                     cluster_id, score, cluster_size = m.groups()
+#                     oc_dict[cluster_id] = {"score": float(score), "size": int(cluster_size), "new_id": n_cluster}
+#                     n_cluster += 1
+#                 elif line.startswith(" "):
+#                     oc_dict[cluster_id]["members"] = line.strip().split(" ")
+#                 else:
+#                     if line.strip() == "":
+#                         pass
+#                     elif line.strip() == "UNCLUSTERED ENTITIES":
+#                         s = 1
+#             else:
+#                 oc_dict["singleton_{}".format(n_singleton)] = {"score": "", "size": 1, "members": [line.strip(),], "new_id": n_cluster}
+#                 n_singleton += 1
+#                 n_cluster += 1
+#     return oc_dict
 
 def write_bs_files(frag_mean_coords, bs_def_out, attr_out, chimera_script_out):
     """
@@ -1163,6 +1149,9 @@ def main(args):
     """
     Main function of the script. Calls all other functions.
     """
+
+    ### PARSING ARGUMENTS
+
     log.info("Logging initiated")
 
     for arg, value in sorted(vars(args).items()):
@@ -1174,32 +1163,34 @@ def main(args):
     override_variants = args.override_variants
     run_variants = args.variants
 
+    ### SETTING UP DIRECTORIES
+
     input_id = os.path.normpath(input_dir).split(os.sep)[-1]
-
     wd = os.getcwd()
-
-    output_dir = os.path.join(wd, "output", "{}".format(input_id))
-
-    supp_pdbs_dir = os.path.join(output_dir, "supp_pdbs")
-    clean_pdbs_dir = os.path.join(output_dir, "clean_pdbs")
-    stamp_out_dir = os.path.join(output_dir, "stamp_out")
-    simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
+    output_dir = os.path.join(wd, "output", input_id)
     results_dir = os.path.join(output_dir, "results")
+    stamp_out_dir = os.path.join(output_dir, "stamp_out")
+    supp_pdbs_dir = os.path.join(output_dir, "supp_pdbs")
+    simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
+    clean_pdbs_dir = os.path.join(output_dir, "clean_pdbs")
+    pdb_clean_dir = os.path.join(output_dir, "pdb_clean")
     sifts_dir = os.path.join(output_dir, "sifts")
     dssp_dir = os.path.join(output_dir, "dssp")
-    pdb_clean_dir = os.path.join(output_dir, "pdb_clean")
     arpeggio_dir = os.path.join(output_dir, "arpeggio")
     varalign_dir = os.path.join(output_dir, "varalign")
     
     dirs = [
-        output_dir, supp_pdbs_dir, clean_pdbs_dir,
-        stamp_out_dir, results_dir, pdb_clean_dir, simple_pdbs_dir,
-        arpeggio_dir, sifts_dir, dssp_dir, varalign_dir,
+        output_dir, results_dir, stamp_out_dir,
+        supp_pdbs_dir, simple_pdbs_dir, clean_pdbs_dir,
+        pdb_clean_dir, sifts_dir, dssp_dir,
+        arpeggio_dir, varalign_dir
     ]
     
     setup_dirs(dirs)
 
     log.info("Directories created")
+
+    ### CHECKING IF FINAL RESULTS TABLE ALREADY EXISTS
 
     final_table_out = os.path.join(results_dir, "{}_results_table.pkl".format(input_id))
     if os.path.isfile(final_table_out) and not override:
@@ -1207,11 +1198,11 @@ def main(args):
         log.info("Skipping to the end")
         sys.exit(0)
 
+    ### STAMP SECTION
+
     strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb") and "clean" not in f]
     n_strucs = len(strucs)
     log.info("Number of structures: {}".format(n_strucs))
-
-    ### STAMP SECTION
 
     domains_out = os.path.join(results_dir, "{}_stamp.domains".format(input_id))
     if os.path.isfile(domains_out):
@@ -1231,33 +1222,32 @@ def main(args):
         log.debug("STAMP matrix files already exist")
         pass
     else:
-        ec = stamp(
+        cmd, ec = stamp(
             domains_out,
             prefix, os.path.join(results_dir, prefix + ".out")
         )
         if ec == 0:
             log.info("STAMP matrix files generated")
-            pass
         else:
-            log.critical("Something went wrong with STAMP")
+            log.critical("STAMP failed with {}".format(cmd))
         
     fnames = fnames_from_domains(domains_out)
 
-    c = 0 # counting the number of superseded pdbs
+    c = 0 # counting the number of superposed pdbs
     for file in fnames:
         if os.path.isfile(os.path.join(supp_pdbs_dir, file)): # only when they alaready have been transformed
             c += 1
     if c == n_domains:
-        log.info("All structure domains already are superposed")
+        log.debug("All structure domains already are superposed")
         pass
     else:
         if not os.path.isfile(matrix_file): # RUNNING TRANSFORM ONCE STAMP OUTPUT HAS BEEN MOVED TO STAMP_OUT_DIR
             matrix_file = os.path.join(stamp_out_dir, prefix + "." + str(n_domains-1)) # needs to change to accommodate for how many domains in .domains file 
-        ec = transform(matrix_file) #running transform with matrix on cwd
+        cmd, ec = transform(matrix_file) #running transform with matrix on cwd
         if ec == 0:
-            pass
+            log.info("Structures transformed")
         else:
-            log.critical("Something went wrong with TRANSFORM")
+            log.critical("TRANSFORM failed with {}".format(cmd))
     
     log.info("STAMP and TRANSFORM completed")
     
@@ -1281,28 +1271,30 @@ def main(args):
                 else:
                     remove_extra_ligs(supp_file, simple_file)
         log.info("All structure domains have been simplified")
+    
+    log.info("PDB simplification completed")
 
     ### GET LIGAND DATA
 
     lig_data_path = os.path.join(results_dir, "{}_lig_data.pkl".format(input_id))
     if os.path.isfile(lig_data_path):
         ligs_df = pd.read_pickle(lig_data_path)
+        log.debug("Saved ligand data")
     else:
         ligs_df = get_lig_data(simple_pdbs_dir, lig_data_path)
-
-    log.info("Ligand data retrieved")
+        log.info("Loaded ligand data")
 
     ### UNIPROT MAPPING SECTION
-
-    swissprot = load_pickle(swissprot_pkl)
-    log.info("Swissprot loaded")
 
     dssp_mapped_out = os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id))
 
     if override or not os.path.isfile(dssp_mapped_out):
 
+        swissprot = load_pickle(swissprot_pkl)
+        log.debug("Swissprot loaded")
+
         mapped_dssps = []
-        for struc in fnames:
+        for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
             ## DSSP
             dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace(".pdb", ".csv"))
             if os.path.isfile(dssp_csv):
@@ -1328,13 +1320,12 @@ def main(args):
 
             mapped_dssp_df = pd.concat(mapped_dssps)
 
-            print(mapped_dssp_df.shape)
-
             mapped_dssp_df.to_pickle(os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id)))
-            log.info("Saved mapped DSSP data")
     else:
         mapped_dssp_df = pd.read_pickle(dssp_mapped_out)
         log.debug("Loaded mapped DSSP data")
+
+    log.info("DSSP and UNIPROT mapping completed")
     
     ### ARPEGGIO PART ###
 
@@ -1349,13 +1340,12 @@ def main(args):
             log.debug("PDB {} already cleaned".format(struc))
             pass
         else:
-            ec = run_clean_pdb(pdb_path)
+            cmd, ec = run_clean_pdb(pdb_path)
             if ec == 0:
-                log.info("PDB {} cleaned".format(struc))
+                log.debug("{} cleaned".format(struc))
                 pass
             else:
-                log.error("Something went wrong when cleaning {}".format(struc))
-                pass
+                log.critical("pdb_clean.py failed with {}".format(cmd))
 
         ligs = struc_df.label_comp_id.unique().tolist()
 
@@ -1371,25 +1361,23 @@ def main(args):
             if os.path.isfile(lig_contacts_1) or os.path.isfile(lig_contacts_2):
                 log.debug("Arpeggio already ran for {} in {}!".format(the_lig, struc))
                 continue
-
-            ec = run_arpeggio(clean_pdb_path, the_lig)
-            if ec == 0:
-                log.info("Arpeggio ran sucessfully for {} in {}!".format(the_lig, struc))
-                for arpeggio_suff in arpeggio_suffixes: # CHANGES ARPEGGIO OUTPUT FILENAMES SO THEY INCLUDE LIGAND NAME
-                    arpeggio_file_old_name_supp = os.path.join(simple_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
-                    arpeggio_file_new_name_supp = os.path.join(simple_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
-                    arpeggio_file_old_name_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
-                    arpeggio_file_new_name_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
-                    if os.path.isfile(arpeggio_file_old_name_supp):
-                        os.rename(arpeggio_file_old_name_supp, arpeggio_file_new_name_supp)
-                    elif os.path.isfile(arpeggio_file_old_name_clean):
-                        os.rename(arpeggio_file_old_name_clean, arpeggio_file_new_name_clean)
             else:
-                log.error("Something went wrong when running Arpeggio for {}".format(struc))
-                pass
+                cmd, ec = run_arpeggio(clean_pdb_path, the_lig)
+                if ec == 0:
+                    log.debug("Arpeggio ran sucessfully for {} in {}!".format(the_lig, struc))
+                    for arpeggio_suff in arpeggio_suffixes: # CHANGES ARPEGGIO OUTPUT FILENAMES SO THEY INCLUDE LIGAND NAME
+                        arpeggio_file_old_name_supp = os.path.join(simple_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
+                        arpeggio_file_new_name_supp = os.path.join(simple_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
+                        arpeggio_file_old_name_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
+                        arpeggio_file_new_name_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
+                        if os.path.isfile(arpeggio_file_old_name_supp):
+                            os.rename(arpeggio_file_old_name_supp, arpeggio_file_new_name_supp)
+                        elif os.path.isfile(arpeggio_file_old_name_clean):
+                            os.rename(arpeggio_file_old_name_clean, arpeggio_file_new_name_clean)
+                else:
+                    log.error("Arpeggio failed for {} with {}".format(struc, cmd))
+                    pass
     
-    #print(struc2ligs)
-
     move_arpeggio_output(simple_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, fnames, struc2ligs)
 
     ligand_contact_list = []
@@ -1402,7 +1390,7 @@ def main(args):
             arpeggio_lig_cons = pd.read_csv(arpeggio_out2)
         else:
             if len(all_ligs) == 0:
-                log.warning("No LOIs in {}, so skipping!".format(struc))
+                log.warning("No LOIs in {}".format(struc))
                 continue
             else:
                 lig_cons_split, arpeggio_lig_cons = process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir) ### NOW PROCESSES ALL LIGANDS ###
@@ -1417,22 +1405,70 @@ def main(args):
     pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
 
     ligs = ligs_df.label_comp_id.unique().tolist()
-    string_name = "{}_BS_def_OC_{}_{}_{}".format(input_id, oc_method, oc_metric, oc_dist)
+    string_name = "{}_BS_def_{}_{}_{}".format(input_id, clust_method, clust_metric, clust_dist)
     bs_def_out = os.path.join(results_dir, "{}.pkl".format(string_name))
     attr_out = os.path.join(results_dir, "{}.attr".format(string_name))
     chimera_script_out = os.path.join(results_dir, "{}.com".format(string_name))
+    # if os.path.isfile(bs_def_out) and os.path.isfile(attr_out) and os.path.isfile(chimera_script_out):
+    #     lig_data_df = pd.read_pickle(bs_def_out)
+    #     log.info
+    #     pass
+    # else:
+    #     lig_data_df = def_bs_oc(
+    #         results_dir, pdb_paths, input_id,
+    #         bs_def_out, attr_out, chimera_script_out,
+    #         arpeggio_dir,
+    #         metric = clust_metric, dist = clust_dist, method = clust_method
+    #         )
+        #log.info("Binding site definition completed!")
+
+    ## DEFINE SITES WITHOUT OC
+
+        # GET DISTANCE MATRIX
+
+    rel_dist_out = os.path.join(results_dir, "{}_rel_dist.pkl".format(input_id))
+    lig_inters_out = os.path.join(results_dir, "{}_lig_inters.pkl".format(input_id))
+    if override or not os.path.isfile(lig_inters_out):
+        lig_data_df = generate_ligs_res_df(arpeggio_dir)
+        lig_data_df.to_pickle(lig_inters_out)
+        log.info("Saved ligand interactions dataframe")
+    else:
+        lig_data_df = pd.read_pickle(lig_inters_out)
+        log.info("Loaded ligand interactions dataframe")
+
+    if override or not os.path.isfile(rel_dist_out):
+        lig_res = lig_data_df.binding_res.tolist()
+        intersect_dict = get_intersect_rel_matrix(lig_res)
+        irel_df = pd.DataFrame(intersect_dict).round(3)
+        dist_df = 1 - irel_df # distance matrix in pd.Dataframe() format
+        dist_df.to_pickle(rel_dist_out) 
+        log.info("Saved relative distance matrix")
+    else:
+        dist_df = pd.read_pickle(rel_dist_out)
+        log.info("Loaded relative distance matrix")
+
     if os.path.isfile(bs_def_out) and os.path.isfile(attr_out) and os.path.isfile(chimera_script_out):
         lig_data_df = pd.read_pickle(bs_def_out)
-        log.info
+        log.debug("Loaded binding site definition")
         pass
     else:
-        lig_data_df = def_bs_oc(
-            results_dir, pdb_paths, input_id,
-            bs_def_out, attr_out, chimera_script_out,
-            arpeggio_dir,
-            metric = oc_metric, dist = oc_dist, method = oc_method
-            )
-        log.info("Binding site definition completed!")
+        labs = lig_data_df.lab.tolist()
+        condensed_dist_mat = scipy.spatial.distance.squareform(dist_df) # condensed distance matrix to be used for clustering
+        linkage = scipy.cluster.hierarchy.linkage(condensed_dist_mat, method = clust_method, optimal_ordering = True)
+        cut_tree = scipy.cluster.hierarchy.cut_tree(linkage, height = clust_dist)
+        cluster_ids = [int(cut) for cut in cut_tree]
+        cluster_id_dict = {labs[i]: cluster_ids[i] for i in range(len(labs))} #dictionary indicating membership for each lig
+
+        pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
+        lig_data_df["binding_site"] = lig_data_df.lab.map(cluster_id_dict)
+        pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_paths}
+        lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
+
+        write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
+
+        log.info("Binding site were defined")
+
+    log.info("Binding site definition completed")
 
     lig_bs_out = os.path.join(results_dir, "{}_lig_bs.pkl".format(input_id))
     lig_ress_out = os.path.join(results_dir, "{}_lig_ress.pkl".format(input_id))
@@ -1477,8 +1513,7 @@ def main(args):
         log.debug("Loaded residue --> [binding site ids] dictionary!")
 
     ### DSSP DATA ANALYSIS
-    #print(mapped_dssp_df.columns.tolist())
-    #assert mapped_dssp_df.UniProt_ResNum.equals(mapped_dssp_df.PDB_ResNum)  
+    #  
     dsspd_filt = mapped_dssp_df.query('UniProt_ResNum == UniProt_ResNum and AA != "X" and RSA == RSA').copy()
     dsspd_filt.SS = dsspd_filt.SS.fillna("C")
     dsspd_filt.SS = dsspd_filt.SS.replace("", "C")
@@ -1569,6 +1604,8 @@ def main(args):
         aa_profiles = load_pickle(aa_profs_out)
         log.debug("Loaded AA profiles")
 
+    log.info("DSSP analysis completed")
+
     ### VARIATION SECTION
 
     if run_variants:
@@ -1618,7 +1655,7 @@ def main(args):
             aln_info = pd.read_pickle(aln_info_path)
             log.debug("Loaded MSA info table")
         
-        log.info("There are {} sequences in MSA for {}".format(len(aln_info), input_id))
+        log.info("There are {} sequences in MSA".format(len(aln_info)))
         
         indexed_mapping_path = os.path.join(varalign_dir, "{}_rf_mappings.p.gz".format(input_id))
         if override_variants or not os.path.isfile(indexed_mapping_path):
@@ -1632,7 +1669,7 @@ def main(args):
         aln_info_human = aln_info.query('species == "HUMAN"')
 
         if len(aln_info_human) > 0:
-            log.info("There are {} HUMAN sequences in the MSA for {}".format(len(aln_info_human), input_id))
+            log.info("There are {} HUMAN sequences in the MSA".format(len(aln_info_human)))
 
             human_hits_msa = os.path.join(varalign_dir, "{}_rf_human.sto".format(input_id))
 
@@ -1650,7 +1687,7 @@ def main(args):
                     variants_table = varalign.align_variants.align_variants(aln_info_human, path_to_vcf = gnomad_vcf,  include_other_info = False, write_vcf_out = False)     
                 except ValueError as e:
                     variants_table = pd.DataFrame()
-                    log.warning("No variants were retrieved for {}".format(input_id))
+                    log.warning("No variants were retrieved")
 
                 variants_table.to_pickle(variant_table_path)
 
@@ -1679,7 +1716,7 @@ def main(args):
                     )
 
                     if missense_variants_df.empty:
-                        log.warning("No missense variants found for MSA of {}".format(input_id))
+                        log.warning("No missense variants found for MSA")
                         pass
 
                     else:
@@ -1708,7 +1745,7 @@ def main(args):
                     shenkin_filt.loc[:, "se_OR"] = missense_variants_df.se_OR
 
         else:
-            log.warning("No human sequences for {}".format(input_id))
+            log.warning("No human sequences in MSA")
             pass
 
         shenkin_mapped_out = os.path.join(results_dir, "{}_ress_consvar.pkl".format(input_id))
@@ -1716,26 +1753,28 @@ def main(args):
             aln_ids = list(set([seqid[0] for seqid in indexed_mapping_table.index.tolist() if uniprot_id in seqid[0]])) # THIS IS EMPTY IF QUERY SEQUENCE IS NOT FOUND
             n_aln_ids = len(aln_ids)
             if n_aln_ids != 1:
-                log.warning("There are {} sequences matching accession for {}".format(str(n_aln_ids), str(input_id)))
+                log.warning("There are {} sequences matching input protein accession".format(str(n_aln_ids)))
             mapped_data = merge_shenkin_df_and_mapping(shenkin_filt, indexed_mapping_table, aln_ids)
             mapped_data.to_pickle(shenkin_mapped_out)
         else:
             mapped_data = pd.read_pickle(shenkin_mapped_out)
-        log.info("Saved conservation + variant data for {}".format(input_id))
+        log.info("Saved conservation + variant data")
 
         if not mapped_dssp_df.empty:
             mapped_data["AA"] = mapped_data.UniProt_ResNum.map(ress_AA_dict)
             mapped_data["RSA"] = mapped_data.UniProt_ResNum.map(ress_RSA_dict)
             mapped_data["SS"] = mapped_data.UniProt_ResNum.map(ress_SS_dict)
         else:
-            log.warning("No DSSP data for {}".format(input_id))
+            log.warning("No DSSP data available")
             pass
 
         mapped_data["binding_sites"] = mapped_data.UniProt_ResNum.map(ress_bss_dict)
         mapped_data.to_pickle(final_table_out)
-        log.info("Saved final table for {}".format(input_id))
+        log.info("Saved final table")
     else:
-        log.info("Not running variants for {}".format(input_id))
+        log.info("Not running variants")
+
+    log.info("Variants section completed")
 
     log.info("THE END")
 

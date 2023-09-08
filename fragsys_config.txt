@@ -21,9 +21,9 @@ struc_fmt = pdb
 arpeggio_dist = 5.0
 n_hmmer_its = 3
 [clustering]
-oc_dist = 0.66
-oc_metric = i_rel
-oc_method = complete
+clust_dist = 0.50
+clust_metric = i_rel
+clust_method = average
 [thresholds]
 MES_t = 1.0
 cons_t_h = 75
