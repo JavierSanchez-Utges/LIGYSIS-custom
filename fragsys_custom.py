@@ -100,6 +100,8 @@ consvar_class_colours = [
     "royalblue", "green", "grey", "firebrick", "orange"
 ]
 
+wd = os.getcwd()
+
 ### CONFIG FILE READING AND VARIABLE SAVING
 
 config = configparser.ConfigParser()
@@ -135,18 +137,18 @@ cons_ts = [cons_t_l, cons_t_h]
 
 ## UTILITIES
 
-def dump_pickle(data, f_out):
+def dump_pickle(data, pickle_out):
     """
-    dumps pickle
+    Dumps pickle.
     """
-    with open(f_out, "wb") as f:
+    with open(pickle_out, "wb") as f:
         pickle.dump(data, f)
 
-def load_pickle(f_in):
+def load_pickle(pickle_in):
     """
-    loads pickle
+    Loads pickle.
     """
-    with open(f_in, "rb") as f:
+    with open(pickle_in, "rb") as f:
         data = pickle.load(f)
     return data
 
@@ -154,7 +156,7 @@ def load_pickle(f_in):
 
 def setup_dirs(dirs):
     """
-    Creates directories if they don't exist.
+    Creates directories if they do not exist.
     """
     for dirr in dirs:
         if os.path.isdir(dirr):
@@ -170,8 +172,9 @@ def generate_STAMP_domains(pdbs_dir, domains_out, roi = stamp_ROI):
     """
     with open(domains_out, "w+") as fh:
         for pdb in os.listdir(pdbs_dir):
-            if pdb[-4:] == ".pdb":
-                fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb[:-4] + "_" + roi, roi))
+            pdb_root, pdb_ext = os.path.splitext(pdb)
+            if pdb_ext == ".pdb":
+                fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_root + "_" + roi, roi))
 
 def stamp(domains, prefix, out):
     """
@@ -199,21 +202,21 @@ def transform(matrix):
     return cmd, exit_code
 
 def fnames_from_domains(domains_out):
-        """
-        Returns a list of the pdb file names from the STAMP domains file.
-        """
-        with open(domains_out) as f:
-            lines = f.readlines()
-        fnames = []
-        for line in lines:
-            fnames.append(line.split()[1] + ".pdb")
-        return fnames
+    """
+    Returns a list of the pdb file names from the STAMP domains file.
+    """
+    with open(domains_out) as f:
+        lines = f.readlines()
+    fnames = []
+    for line in lines:
+        fnames.append(line.split()[1] + ".pdb")
+    return fnames
 
-def move_supp_files(struc_files, supp_pdbs_dir):
+def move_supp_files(struc_files, supp_pdbs_dir, cwd):
     """
     Moves set of supperimposed coordinate files to appropriate directory.
     """
-    cwd = os.getcwd()
+    #cwd = os.getcwd()
     for file in struc_files:
         if os.path.isfile(os.path.join(cwd, file)):
             shutil.move(
@@ -221,11 +224,11 @@ def move_supp_files(struc_files, supp_pdbs_dir):
                 os.path.join(supp_pdbs_dir, file)
             )
 
-def move_stamp_output(prefix, stamp_out_dir):
+def move_stamp_output(prefix, stamp_out_dir, cwd):
     """
     Moves STAMP output files to appropriate directory.
     """
-    cwd = os.getcwd()
+    #cwd = os.getcwd()
     stamp_files = sorted([file for file in os.listdir(cwd) if prefix in file]) + ["stamp_rough.trans"]
     for file in stamp_files:
         filepath = os.path.join(cwd, file)
@@ -244,15 +247,14 @@ def remove_extra_ligs(supp_file, simple_file):
         """
         Removes ligands present in non-ROI chains.
         """
-        fname = os.path.basename(supp_file)
-        chains_spec = fname.split("_")[1].split(".")[0]
+        fname, _ = os.path.splitext(os.path.basename(supp_file))
+        chains_spec = fname.split("_")[-1]
         df = PDBXreader(inputfile = supp_file).atoms(format_type = "pdb", excluded=())
         if chains_spec == "ALL":
             pass
         else:
             chains = list(chains_spec)
             df = df.query('label_asym_id in @chains')
-
         w = PDBXwriter(outputfile = simple_file)
         w.run(df, format_type = "pdb", category = "auth")
 
@@ -322,14 +324,15 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, sifts_dir, swisspr
         )
         PDB_UniProt_map = PDB_UniProt_map.assign(UniProt_ResName = list(alignment[0][0]))
         PDB_index = PDB_UniProt_map.query('PDB_ResName != "-"').index
-        PDB_UniProt_map = PDB_UniProt_map.assign(PDB_ResNum = pd.Series(pdb_chain_seq[2], index=PDB_index)) # adds PDB_ResNum column
-        PDB_UniProt_map = PDB_UniProt_map.assign(PDB_ChainID = pd.Series(pdb_chain_seq[0], index=PDB_index)) # adds PDB_ChainId column
+        PDB_UniProt_map = PDB_UniProt_map.assign(PDB_ResNum = pd.Series(pdb_chain_seq[2], index = PDB_index)) # adds PDB_ResNum column
+        PDB_UniProt_map = PDB_UniProt_map.assign(PDB_ChainID = pd.Series(pdb_chain_seq[0], index = PDB_index)) # adds PDB_ChainId column
         maps.append(PDB_UniProt_map)
     prointvar_mapping = pd.concat(maps)
     prointvar_mapping = prointvar_mapping[['UniProt_ResNum','UniProt_ResName','PDB_ResName','PDB_ResNum','PDB_ChainID']]
     prointvar_mapping = prointvar_mapping[~prointvar_mapping.PDB_ResNum.isnull()]
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
-    prointvar_mapping_csv = os.path.join(sifts_dir, struc.replace(".pdb", ".mapping"))
+    struc_root, _ = os.path.splitext(struc) 
+    prointvar_mapping_csv = os.path.join(sifts_dir, struc_root + ".mapping")
     prointvar_mapping.to_csv(prointvar_mapping_csv, index = False)
     return prointvar_mapping
 
@@ -339,8 +342,9 @@ def run_dssp(struc, supp_pdbs_dir, dssp_dir):
     """
     Runs DSSP, saves and return resulting output dataframe
     """
-    dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace(".pdb", ".csv")) # output csv filepath
-    dssp_out = os.path.join(dssp_dir, struc.replace(".pdb", ".dssp"))
+    struc_root, _ = os.path.splitext(struc)
+    dssp_csv = os.path.join(dssp_dir, "dssp_" + struc_root + ".csv") # output csv filepath
+    dssp_out = os.path.join(dssp_dir, struc_root + ".dssp")
     struc_in = os.path.join(supp_pdbs_dir, struc)
     DSSPrunner(inputfile = struc_in, outputfile = dssp_out).write()            # runs DSSP
     dssp_data = DSSPreader(inputfile = dssp_out).read()            # reads DSSP output
@@ -380,27 +384,28 @@ def move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_
     Moves pdb_clean.py and Arpeggio output files to appropriate directory.
     """  
     for struc in strucs:
-        clean_struc = struc.replace(".pdb", ".clean.pdb")
+        struc_root, _ = os.path.splitext(struc) 
+        clean_struc = struc_root + ".clean.pdb"
         clean_struc_path_from = os.path.join(supp_pdbs_dir, clean_struc)
         clean_struc_path_to = os.path.join(clean_pdbs_dir, clean_struc)
         if os.path.isfile(clean_struc_path_from):
             shutil.move(clean_struc_path_from, clean_struc_path_to)
         for arpeggio_suff in arpeggio_suffixes:
             for the_lig in struc2ligs[struc]:
-                arpeggio_file_from_supp = os.path.join(supp_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
-                arpeggio_file_to = os.path.join(arpeggio_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
-                arpeggio_file_from_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
+                arpeggio_file_from_supp = os.path.join(supp_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
+                arpeggio_file_to = os.path.join(arpeggio_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
+                arpeggio_file_from_clean = os.path.join(clean_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
                 if os.path.isfile(arpeggio_file_from_supp):
                     shutil.move(arpeggio_file_from_supp, arpeggio_file_to)
                 elif os.path.isfile(arpeggio_file_from_clean):
                     shutil.move(arpeggio_file_from_clean, arpeggio_file_to)
         for pdb_clean_suff in pdb_clean_suffixes:
-            pdb_clean_file_from = os.path.join(supp_pdbs_dir, struc + "." + pdb_clean_suff)
-            pdb_clean_file_to = os.path.join(pdb_clean_dir, struc + "." + pdb_clean_suff)
+            pdb_clean_file_from = os.path.join(supp_pdbs_dir, "{}.{}".format(struc, pdb_clean_suff))
+            pdb_clean_file_to = os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff))
             if os.path.isfile(pdb_clean_file_from):
                 shutil.move(pdb_clean_file_from, pdb_clean_file_to)
-            elif os.path.isfile(os.path.join(pdb_clean_dir, struc + "." + pdb_clean_suff)):
-                shutil.move(os.path.join(pdb_clean_dir, struc + "." + pdb_clean_suff), pdb_clean_file_to)
+            elif os.path.isfile(os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff))):
+                shutil.move(os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff)), pdb_clean_file_to)
 
 def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir):
     """
@@ -409,9 +414,11 @@ def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir):
     """
     lig_cons_splits = []
     arpeggio_lig_conss = []
+
+    struc_root, _ = os.path.splitext(struc)
         
     for lig in all_ligs:
-        arpeggio_out_path_lig = os.path.join(arpeggio_dir, struc.replace(".pdb", ".clean_{}.bs_contacts".format(lig)))
+        arpeggio_out_path_lig = os.path.join(arpeggio_dir, "{}.clean_{}.bs_contacts".format(struc_root, lig))
         
         all_cons_lig = pd.read_table(arpeggio_out_path_lig, header = None)
 
@@ -437,14 +444,12 @@ def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir):
     
     ########################### ADDED TO AVOID INCORRECT BS DEFINITION DUE TO PDB RESNUMS ###########################
 
-    struc_mapping = pd.read_csv(os.path.join(sifts_dir, struc.replace(".pdb", ".mapping")))
+    struc_mapping = pd.read_csv(os.path.join(sifts_dir, "{}.mapping".format(struc_root)))
 
     mapping_dict = {}
     for chain, chain_df in struc_mapping.groupby("PDB_ChainID"):
         for i, row in chain_df.iterrows():
             mapping_dict[(chain, str(row["PDB_ResNum"]))] = row["UniProt_ResNum"]
-    
-    #sifts_dict = extend_sifts_mapping_dict(sifts_dict, bio2asym_chain_dict, cif2pdb_chain_dict)
     
     lig_cons_split['ResNum (Atom1)'] = lig_cons_split['ResNum (Atom1)'].astype(str)
     arpeggio_lig_cons['PDB_ResNum'] = arpeggio_lig_cons['PDB_ResNum'].astype(str)
@@ -460,20 +465,20 @@ def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir):
     new_len1 = len(arpeggio_lig_cons)
     new_len2 = len(lig_cons_split)
     if new_len1 != old_len1:
-        log.warning("{} residues lacked mapping from PDB to UniProt at arpeggio_lig_cons for {}".format(new_len1 - old_len1, struc))
+        log.warning("{} residues lacked mapping from PDB to UniProt at arpeggio_lig_cons for {}".format(new_len1 - old_len1, struc_root))
     if new_len2 != old_len2:
-        log.warning("{} residues lacked mapping from PDB to UniProt at lig_cons_split for {}".format(new_len2 - old_len2, struc))
+        log.warning("{} residues lacked mapping from PDB to UniProt at lig_cons_split for {}".format(new_len2 - old_len2, struc_root))
 
     ########################### ADDED TO AVOID INCORRECT BS DEFINITION DUE TO LACKING MAPPING TO PDB RESNUMS ###########################
 
-    lig_cons_split.to_csv(os.path.join(arpeggio_dir,  "arpeggio_all_cons_split_" + struc.replace(".pdb", ".csv")), index = False)
-    arpeggio_lig_cons.to_csv(os.path.join(arpeggio_dir,  "arpeggio_lig_cons_" + struc.replace(".pdb", ".csv")), index = False)
+    lig_cons_split.to_csv(os.path.join(arpeggio_dir,  "arpeggio_all_cons_split_{}.csv".format(struc_root)), index = False)
+    arpeggio_lig_cons.to_csv(os.path.join(arpeggio_dir,  "arpeggio_lig_cons_{}.csv".format(struc_root)), index = False)
     
     return lig_cons_split, arpeggio_lig_cons
 
 def reformat_arpeggio(arpeggio_df):
     """
-    starts formatting arpeggio table
+    Starts formatting arpeggio table.
     """
     arpeggio_df.columns = [
         'Atom_1', 'Atom_2', 'Clash', 'Covalent', 'VdW Clash', 'Vdw', 'Proximal', 'Hydrogen Bond',
@@ -499,7 +504,8 @@ def add_resnames_to_arpeggio_table(structure, clean_pdbs_dir, arpeggio_cons_spli
     """
     adds residue names to arpeggio table, needed for later table mergings
     """
-    structure_path = os.path.join(clean_pdbs_dir, structure.replace(".pdb", ".clean.pdb"))
+    structure_root, _ = os.path.splitext(structure) 
+    structure_path = os.path.join(clean_pdbs_dir, "{}.clean.pdb".format(structure_root))
     pdb_structure = PDBXreader(inputfile = structure_path).atoms(format_type = "pdb", excluded=())
     resnames_dict = {(row.label_asym_id, int(row.label_seq_id)): row.label_comp_id for index, row in pdb_structure.drop_duplicates(['label_asym_id', 'label_seq_id']).iterrows()}
     arpeggio_cons_split["ResName (Atom1)"] = arpeggio_cons_split.set_index(["Chain (Atom1)", "ResNum (Atom1)"]).index.map(resnames_dict.get)
@@ -543,51 +549,23 @@ def contact_type(row):
 
 ### FUNCTIONS FOR SITE DEFINITION
 
-# def def_bs_oc(results_dir, pdb_files, input_id, bs_def_out, attr_out, chimera_script_out, arpeggio_dir, metric = clust_metric, dist = clust_dist, method = clust_method):
-#     """
-#     given a set of pdb structures, and other arguments, clusters ligands in space,
-#     defines binding sites and writes chimera attribute files and chimera script to
-#     format the superimposed structures to facilitate visualisation
-    
-#     alt_fmt is a boolean I added so it works with slightly different input. Still PDB
-#     files, but some which coordinates were transformed using PDBe-KB transformation
-#     matrices. They have different nomenclature and therefore indices to get pdb_files_dict
-#     must be different
-#     """
-#     lig_data_df= generate_ligs_res_df(arpeggio_dir)
-
-#     if len(lig_data_df) == 1: #should only happen in the case of only one LOI
-#         lig_data_df["binding_site"] = 0
-#     else:
-#         dis_out = os.path.join(results_dir, "{}_{}.dis".format(input_id, metric))
-#         get_dis_file(lig_data_df, dis_out, metric = metric)
-        
-#         ocout, ec = oc(dis_out, method = method, cut_t = dist)
-#         oc_dict = oc2dict(ocout)
-#         cluster_id_dict = {}
-#         for k, v in oc_dict.items():
-#             for member in v["members"]:
-#                 cluster_id_dict[member] = v["new_id"]
-                
-#         lig_data_df["binding_site"] = lig_data_df.lab.map(cluster_id_dict)
-#         pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_files}
-#         lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
-    
-#     write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
-    
-#     return lig_data_df
-
 def generate_ligs_res_df(arpeggio_dir):
     """
     Given a directory containing processed Arpeggio output files,
     returns a dataset containing information about the ligands of
     interest binding the protein and their labels.
     """
+    p = re.compile("""arpeggio_all_cons_split_(.+).csv""")
     lig_files = sorted([file for file in os.listdir(arpeggio_dir) if file.startswith("arpeggio_all_cons_split")])
     file_ids, ligs, resnums, chains, ligs_ress = [[], [], [], [], []]
     for file in lig_files:
-        comps = file.split("_")
-        file_id = "{}_{}".format(comps[-2], comps[-1].split(".")[0]) # CAREFUL WITH THIS ID
+        m = p.match(file)
+        if m:
+            file_id = m.group(1)
+        else:
+            log.critical("Failed getting file ID for {}".format(file))
+        #comps = file.split("_")
+        #file_id = "{}_{}".format(comps[-2], comps[-1].split(".")[0]) # CAREFUL WITH THIS ID
         df = pd.read_csv(os.path.join(arpeggio_dir, file))
         for lig, lig_df in df.groupby(["ResName (Atom2)", "ResNum (Atom2)", "Chain (Atom2)"]):
             lig_ress = lig_df["UniProt_Resnum"].unique().tolist()
@@ -601,17 +579,13 @@ def generate_ligs_res_df(arpeggio_dir):
     lig_data_df["lab"] = labs
     return lig_data_df
 
-def get_dis_file(lig_data_df, out, metric = clust_metric):
+def get_dis_file(lig_data_df, out):
     """
     Creates .dis file to be fed to OC.
     """
     lig_res = lig_data_df.binding_res.tolist() #this is a list of lists, each list contains residue numbers interacting with ligand
     labs = lig_data_df.lab.tolist()
-    if metric == "i_rel":
-        intersect_dict = get_intersect_rel_matrix(lig_res)
-    elif metric == "i_abs":
-        intersect_dict = get_intersect_matrix(lig_res)
-        
+    intersect_dict = get_intersect_rel_matrix(lig_res)
     n_ligs = len(lig_res)
     with open(out, "w+") as fh:
         fh.write(str(n_ligs) + "\n")
@@ -644,69 +618,6 @@ def intersection_rel(l1, l2):
     I_max = min([len1, len2])
     I = len(list(set(l1).intersection(l2)))
     return I/I_max
-
-def get_intersect_matrix(binding_ress):
-    """
-    Given a set of ligand binding residues, calcualtes a
-    similarity matrix between all the different sets of ligand
-    binding residues.
-    """
-    inters = {i: {} for i in range(len(binding_ress))}
-    for i in range(len(binding_ress)):
-        inters[i][i] = intersection(binding_ress[i], binding_ress[i])
-        for j in range(i+1, len(binding_ress)):
-            inters[i][j] = intersection(binding_ress[i], binding_ress[j])
-            inters[j][i] = inters[i][j]
-    return inters
-
-def intersection(l1, l2):
-    """
-    Calculates intersection.
-    """
-    I = len(list(set(l1).intersection(l2)))
-    return I
-
-# def oc(oc_in, type_mat = "sim", method = clust_method, cut_t = clust_dist):
-#     """
-#     Runs OC and returns exit code, should be 0 if all is OK.
-#     """
-#     oc_out = oc_in.replace(".dis", "_{}_{}_cut_{}.ocout".format(type_mat, method, cut_t))
-#     args = [
-#         "/homes/2394007/oc", type_mat, method, "id", "cut", str(cut_t),
-#         "ps", oc_out[:-6], "<", oc_in, ">", oc_out
-#     ]
-#     exit_code = os.system(" ".join(args))
-#     return oc_out, exit_code
-
-# def oc2dict(ocout):
-#     """
-#     Parses OC output to generate dict.
-#     """
-#     oc_dict = {}
-#     re_cluster = re.compile("""##\s+(\d+)\s(\d+\.*\d*)\s(\d+)\s*""")
-#     with open (ocout, "r") as fh:
-#         s = 0
-#         n_singleton = 0
-#         n_cluster = 0
-#         for line in fh:
-#             if s == 0:
-#                 if line.startswith("##"):
-#                     m = re_cluster.match(line)
-#                     cluster_id, score, cluster_size = m.groups()
-#                     oc_dict[cluster_id] = {"score": float(score), "size": int(cluster_size), "new_id": n_cluster}
-#                     n_cluster += 1
-#                 elif line.startswith(" "):
-#                     oc_dict[cluster_id]["members"] = line.strip().split(" ")
-#                 else:
-#                     if line.strip() == "":
-#                         pass
-#                     elif line.strip() == "UNCLUSTERED ENTITIES":
-#                         s = 1
-#             else:
-#                 oc_dict["singleton_{}".format(n_singleton)] = {"score": "", "size": 1, "members": [line.strip(),], "new_id": n_cluster}
-#                 n_singleton += 1
-#                 n_cluster += 1
-#     return oc_dict
 
 def write_bs_files(frag_mean_coords, bs_def_out, attr_out, chimera_script_out):
     """
@@ -785,40 +696,42 @@ def get_residue_bs_membership(cluster_ress):
 
 def create_alignment_from_struc(example_struc, fasta_path, pdb_fmt = struc_fmt, n_it = n_hmmer_its, seqdb = swissprot_path):
     """
-    given an example structure, creates and reformats an MSA
+    Given an example structure, creates and reformats an MSA.
     """
     create_fasta_from_seq(get_seq_from_pdb(example_struc, pdb_fmt = pdb_fmt), fasta_path) # CREATES FASTA FILE FROM PDB FILE
-    hits_out = fasta_path.replace(".fa", ".out")
-    hits_aln = fasta_path.replace(".fa", ".sto")
-    hits_aln_rf = fasta_path.replace(".fa", "_rf.sto")
+    fasta_root, _ = os.path.splitext(fasta_path)    
+    hits_out = "{}.out".format(fasta_root)
+    hits_aln = "{}.sto".format(fasta_root)
+    hits_aln_rf = "{}_rf.sto".format(fasta_root)    
     jackhmmer(fasta_path, hits_out, hits_aln , n_it = n_it, seqdb = seqdb,) # RUNS JACKHAMMER USING AS INPUT THE SEQUENCE FROM THE PDB AND GENERATES ALIGNMENT
     add_acc2msa(hits_aln, hits_aln_rf)
 
 def get_seq_from_pdb(pdb_path, pdb_fmt = struc_fmt): # MIGHT NEED TO BE MORE SELECTIVE WITH CHAIN, ETC
     """
-    generates aa sequence string from a pdb coordinates file
+    Generates aa sequence string from a pdb coordinates file.
     """
     struc = PDBXreader(pdb_path).atoms(format_type = pdb_fmt, excluded=())
     return "".join([aa_code[aa] for aa in struc.query('group_PDB == "ATOM"').drop_duplicates(["auth_seq_id"]).auth_comp_id.tolist()])
 
 def create_fasta_from_seq(seq, out):
     """
-    saves input sequence to fasta file to use as input for jackhmmer
+    Saves input sequence to fasta file to use as input for jackhmmer.
     """
     with open(out, "w+") as fh:
         fh.write(">query\n{}\n".format(seq))
 
 def jackhmmer(seq, hits_out, hits_aln, n_it = n_hmmer_its, seqdb = swissprot_path):
     """
-    runs jackhmmer on an input seq for a number of iterations and returns exit code, should be 0 if all is ok
+    Runs jackhmmer on an input seq for a number of iterations and returns exit code, should be 0 if all is OK.
     """
     args = ["jackhmmer", "-N", str(n_it), "-o", hits_out, "-A", hits_aln, seq, seqdb]
-    exit_code = os.system(" ".join(args))
-    return exit_code
+    cmd = " ".join(args)
+    exit_code = os.system(cmd)
+    return cmd, exit_code
 
 def add_acc2msa(aln_in, aln_out, fmt_in = msa_fmt):
     """
-    modifies AC field of jackhmmer alignment in stockholm format.
+    Modifies AC field of jackhmmer alignment in stockholm format.
     
     :param aln_in: path of input alignment
     :type aln_in: str, required
@@ -839,7 +752,7 @@ def add_acc2msa(aln_in, aln_out, fmt_in = msa_fmt):
 
 def get_target_prot_cols(msa_in, msa_fmt = msa_fmt): 
     """
-    returns list of MSA col idx that are popualted on the protein target
+    Returns list of MSA col idx that are popualted on the protein target.
     """
     seqs = [str(rec.seq) for rec in Bio.SeqIO.parse(msa_in, msa_fmt) if "query" in rec.id]
     occupied_cols = [i+1 for seq in seqs for i, el in enumerate(seq) if el != "-"]
@@ -893,25 +806,23 @@ def in_columns(aln_in, infmt):
         cols[col] = []
     for row in aln:
         seq = str(row.seq)
-        for i in range(0,len(seq)):
+        for i in range(0, len(seq)):
             cols[i+1].append(seq[i])
     return cols
 
 def get_shenkin(i_col, col):
     """
-    calculates Shenkin score for an MSA column
+    Calculates Shenkin score for an MSA column.
     """
     S = get_entropy(get_freqs(i_col, col))
     return round((2**S)*6,2)
 
 def get_freqs(i_col, col):
     """
-    calculates amino acid frequences for a given MSA column
+    Calculates amino acid frequences for a given MSA column.
     """
-    abs_freqs = {
-        "A": 0, "R": 0, "N": 0, "D": 0, "C": 0, "Q": 0, "E": 0, "G": 0, "H": 0, "I": 0,
-        "L": 0, "K": 0, "M": 0, "F": 0, "P": 0, "S": 0, "T": 0, "W": 0, "Y": 0, "V": 0, "-": 0
-    }
+
+    abs_freqs = {aa: 0 for aa in aas_1l}
     non_standard_aas = {}
     for aa in col:
         aa = aa.upper()
@@ -932,7 +843,7 @@ def get_freqs(i_col, col):
 
 def get_entropy(freqs):
     """
-    calculates Shannon's entropy from a set of aa frequencies
+    Calculates Shannon's entropy from a set of aa frequencies.
     """
     S = 0
     for f in freqs.values():
@@ -942,7 +853,7 @@ def get_entropy(freqs):
 
 def format_shenkin(shenkin, prot_cols, out = None):
     """
-    formats conservation dataframe and also
+    Formats conservation dataframe and also
     calculates two normalised versions of it.
     """
     shenkin_filt = shenkin[shenkin.col.isin(prot_cols)].copy()
@@ -957,7 +868,7 @@ def format_shenkin(shenkin, prot_cols, out = None):
 
 def get_human_subset_msa(aln_in, human_msa_out, fmt_in = msa_fmt):
     """
-    creates a subset MSA containing only human sequences
+    Creates a subset MSA containing only human sequences.
     """
     msa = Bio.AlignIO.read(aln_in, fmt_in)
     human_recs = []
@@ -968,7 +879,7 @@ def get_human_subset_msa(aln_in, human_msa_out, fmt_in = msa_fmt):
 
 def cp_sqlite(wd, og_path = ensembl_sqlite_path):
     """
-    copies ensembl_cache.sqlite
+    Copies ensembl_cache.sqlite
     to execution directory.
     """
     hidden_var_dir = os.path.join(wd, ".varalign")
@@ -983,14 +894,12 @@ def cp_sqlite(wd, og_path = ensembl_sqlite_path):
 
 def rm_sqlite(cp_path):
     """
-    removes ensembl_cache.sqlite
+    Removes ensembl_cache.sqlite
     from execution directory.
     """
     hidden_var_dir = os.path.dirname(cp_path)
     os.remove(cp_path)
     os.rmdir(hidden_var_dir)
-    
-    #DEF
 
 def format_variant_table(df, col_mask, vep_mask = ["missense_variant"], tab_format = "gnomad"):
     """
@@ -1044,20 +953,19 @@ def generate_subset_aln(aln_in, aln_fmt, df, aln_out = None):
     variant_seqs = [rec for rec in aln if rec.id in seqs_ids]
     n_variant_seqs = len(variant_seqs)
     if n_variant_seqs == 0:
-        #log.critical("No variants were found in {}. Finishing here".format(aln_in))
         return ""
     else:
         log.info("There are {} sequences with variants for {}".format(str(n_variant_seqs), aln_in))
     if aln_out == None:
-        pref, fmt = aln_in.split(".")
-        aln_out =  pref + "_variant_seqs." + fmt
+        aln_root, aln_ext = os.path.splitext(aln_in)
+        aln_out =  "{}_variant_seqs{}".format(aln_root, aln_ext)
     Bio.SeqIO.write(variant_seqs, aln_out, aln_fmt)
     return aln_out
 
 def get_OR(df, variant_col = "variants"):
     """
-    calculates OR, ln(OR) and associated p-value and CI,
-    given a missense dataframe with variants and occupancy
+    Calculates OR, and associated p-value and CI,
+    given a missense dataframe with variants and occupancy.
     """
     tot_occ = sum(df.occ)
     tot_vars = sum(df[variant_col])
@@ -1166,7 +1074,7 @@ def main(args):
     ### SETTING UP DIRECTORIES
 
     input_id = os.path.normpath(input_dir).split(os.sep)[-1]
-    wd = os.getcwd()
+    #wd = os.getcwd()
     output_dir = os.path.join(wd, "output", input_id)
     results_dir = os.path.join(output_dir, "results")
     stamp_out_dir = os.path.join(output_dir, "stamp_out")
@@ -1215,7 +1123,7 @@ def main(args):
     prefix = "{}_stamp".format(input_id)
     n_domains = len(open(domains_out).readlines())
     log.info("Number of domains: {}".format(str(n_domains)))
-    matrix_file = prefix + "." + str(n_domains-1)
+    matrix_file = "{}.{}".format(prefix, str(n_domains-1))
     last_matrix_path = os.path.join(stamp_out_dir, matrix_file)
 
     if os.path.isfile(last_matrix_path):
@@ -1224,7 +1132,7 @@ def main(args):
     else:
         cmd, ec = stamp(
             domains_out,
-            prefix, os.path.join(results_dir, prefix + ".out")
+            prefix, os.path.join(results_dir, "{}.out".format(prefix))
         )
         if ec == 0:
             log.info("STAMP matrix files generated")
@@ -1242,7 +1150,7 @@ def main(args):
         pass
     else:
         if not os.path.isfile(matrix_file): # RUNNING TRANSFORM ONCE STAMP OUTPUT HAS BEEN MOVED TO STAMP_OUT_DIR
-            matrix_file = os.path.join(stamp_out_dir, prefix + "." + str(n_domains-1)) # needs to change to accommodate for how many domains in .domains file 
+            matrix_file = os.path.join(stamp_out_dir, matrix_file) # needs to change to accommodate for how many domains in .domains file 
         cmd, ec = transform(matrix_file) #running transform with matrix on cwd
         if ec == 0:
             log.info("Structures transformed")
@@ -1251,9 +1159,9 @@ def main(args):
     
     log.info("STAMP and TRANSFORM completed")
     
-    move_supp_files(fnames, supp_pdbs_dir)
+    move_supp_files(fnames, supp_pdbs_dir, wd)
 
-    move_stamp_output(prefix, stamp_out_dir)
+    move_stamp_output(prefix, stamp_out_dir, wd)
 
     n_simple_pdbs = len(os.listdir(simple_pdbs_dir))
 
@@ -1296,25 +1204,27 @@ def main(args):
         mapped_dssps = []
         for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
             ## DSSP
-            dssp_csv = os.path.join(dssp_dir, "dssp_" + struc.replace(".pdb", ".csv"))
+            struc_root, _ =  os.path.splitext(struc)
+            dssp_csv = os.path.join(dssp_dir, "dssp_{}.csv".format(struc_root))
             if os.path.isfile(dssp_csv):
                 dssp_data = pd.read_csv(dssp_csv)
                 log.debug("DSSP data already exists")
                 pass
             else:
                 dssp_data = run_dssp(struc, simple_pdbs_dir, dssp_dir)
-                log.info("DSSP run successfully on {}".format(struc))
+                log.info("DSSP run successfully on {}".format(struc_root))
 
             ## UNIPROT MAPPING
-            struc_mapping_path = os.path.join(sifts_dir, struc.replace(".pdb", ".mapping"))
+            struc_mapping_path = os.path.join(sifts_dir, "{}.mapping".format(struc_root))
             if os.path.isfile(struc_mapping_path):
                 mapping = pd.read_csv(struc_mapping_path)
-                log.debug("Mapping file for {} already exists".format(struc))
+                log.debug("Mapping file for {} already exists".format(struc_root))
                 pass
             else:
                 mapping = retrieve_mapping_from_struc(struc, uniprot_id, simple_pdbs_dir, sifts_dir, swissprot)
-                log.info("Mapping file for {} generated".format(struc))
+                log.info("Mapping file for {} generated".format(struc_root))
             
+            #print(mapping, dssp_data)
             mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum")
             mapped_dssps.append(mapping)
 
@@ -1331,11 +1241,13 @@ def main(args):
 
     struc2ligs = {}
     for struc in fnames:
+        struc_root, _ =  os.path.splitext(struc)
         struc2ligs[struc] = []
         struc_df = ligs_df.query('struc_name == @struc')
         pdb_path = os.path.join(simple_pdbs_dir, struc)
-        clean_pdb_path = pdb_path.replace(".pdb", ".clean.pdb")
-        pdb_clean_1 = os.path.join(clean_pdbs_dir, struc.replace(".pdb", ".clean.pdb"))
+        pdb_path_root, _ =  os.path.splitext(pdb_path)
+        clean_pdb_path = "{}.clean.pdb".format(pdb_path_root)
+        pdb_clean_1 = os.path.join(clean_pdbs_dir, "{}.clean.pdb".format(struc_root))
         if os.path.isfile(pdb_clean_1) or os.path.isfile(clean_pdb_path):
             log.debug("PDB {} already cleaned".format(struc))
             pass
@@ -1355,8 +1267,8 @@ def main(args):
             if not os.path.isfile(clean_pdb_path):
                 clean_pdb_path = pdb_clean_1
 
-            lig_contacts_1 = os.path.join(arpeggio_dir, struc[:-3] + "clean_{}.bs_contacts".format(the_lig))
-            lig_contacts_2 = os.path.join(simple_pdbs_dir, struc[:-3] + "clean_{}.bs_contacts".format(the_lig))
+            lig_contacts_1 = os.path.join(arpeggio_dir, "{}.clean_{}.bs_contacts".format(struc_root, the_lig))
+            lig_contacts_2 = os.path.join(simple_pdbs_dir, "{}.clean_{}.bs_contacts".format(struc_root, the_lig))
             
             if os.path.isfile(lig_contacts_1) or os.path.isfile(lig_contacts_2):
                 log.debug("Arpeggio already ran for {} in {}!".format(the_lig, struc))
@@ -1366,35 +1278,36 @@ def main(args):
                 if ec == 0:
                     log.debug("Arpeggio ran sucessfully for {} in {}!".format(the_lig, struc))
                     for arpeggio_suff in arpeggio_suffixes: # CHANGES ARPEGGIO OUTPUT FILENAMES SO THEY INCLUDE LIGAND NAME
-                        arpeggio_file_old_name_supp = os.path.join(simple_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
-                        arpeggio_file_new_name_supp = os.path.join(simple_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
-                        arpeggio_file_old_name_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean" + "." + arpeggio_suff)
-                        arpeggio_file_new_name_clean = os.path.join(clean_pdbs_dir, struc[:-3] + "clean_{}".format(the_lig) + "." + arpeggio_suff)
+                        arpeggio_file_old_name_supp = os.path.join(simple_pdbs_dir, "{}.clean.{}".format(struc_root, arpeggio_suff))
+                        arpeggio_file_new_name_supp = os.path.join(simple_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
+                        arpeggio_file_old_name_clean = os.path.join(clean_pdbs_dir, "{}.clean.{}".format(struc_root, arpeggio_suff))
+                        arpeggio_file_new_name_clean = os.path.join(clean_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
                         if os.path.isfile(arpeggio_file_old_name_supp):
                             os.rename(arpeggio_file_old_name_supp, arpeggio_file_new_name_supp)
                         elif os.path.isfile(arpeggio_file_old_name_clean):
                             os.rename(arpeggio_file_old_name_clean, arpeggio_file_new_name_clean)
                 else:
-                    log.error("Arpeggio failed for {} with {}".format(struc, cmd))
+                    log.error("Arpeggio failed for {} with {}".format(struc_root, cmd))
                     pass
     
     move_arpeggio_output(simple_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, fnames, struc2ligs)
 
     ligand_contact_list = []
     for struc in fnames:
+        struc_root, _ =  os.path.splitext(struc)
         all_ligs = ligs_df.query('struc_name == @struc').label_comp_id.unique().tolist()
-        arpeggio_out1 = os.path.join(arpeggio_dir, "arpeggio_all_cons_split_" + struc.replace(".pdb", ".csv")) # output file 1
-        arpeggio_out2 = os.path.join(arpeggio_dir,  "arpeggio_lig_cons_" + struc.replace(".pdb", ".csv")) # output file 2
+        arpeggio_out1 = os.path.join(arpeggio_dir, "arpeggio_all_cons_split_{}.csv".format(struc_root)) # output file 1
+        arpeggio_out2 = os.path.join(arpeggio_dir,  "arpeggio_lig_cons_{}.csv".format(struc_root)) # output file 2
         if os.path.isfile(arpeggio_out1) and os.path.isfile(arpeggio_out2):
             lig_cons_split = pd.read_csv(arpeggio_out1)
             arpeggio_lig_cons = pd.read_csv(arpeggio_out2)
         else:
             if len(all_ligs) == 0:
-                log.warning("No LOIs in {}".format(struc))
+                log.warning("No LOIs in {}".format(struc_root))
                 continue
             else:
                 lig_cons_split, arpeggio_lig_cons = process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir) ### NOW PROCESSES ALL LIGANDS ###
-                log.debug("Arpeggio output processed for {}!".format(struc))
+                log.debug("Arpeggio output processed for {}!".format(struc_root))
         ligand_contact = arpeggio_lig_cons["PDB_ResNum"].astype(str)
         ligand_contact_list.append(ligand_contact)
 
@@ -1409,22 +1322,10 @@ def main(args):
     bs_def_out = os.path.join(results_dir, "{}.pkl".format(string_name))
     attr_out = os.path.join(results_dir, "{}.attr".format(string_name))
     chimera_script_out = os.path.join(results_dir, "{}.com".format(string_name))
-    # if os.path.isfile(bs_def_out) and os.path.isfile(attr_out) and os.path.isfile(chimera_script_out):
-    #     lig_data_df = pd.read_pickle(bs_def_out)
-    #     log.info
-    #     pass
-    # else:
-    #     lig_data_df = def_bs_oc(
-    #         results_dir, pdb_paths, input_id,
-    #         bs_def_out, attr_out, chimera_script_out,
-    #         arpeggio_dir,
-    #         metric = clust_metric, dist = clust_dist, method = clust_method
-    #         )
-        #log.info("Binding site definition completed!")
 
     ## DEFINE SITES WITHOUT OC
 
-        # GET DISTANCE MATRIX
+    # GET DISTANCE MATRIX
 
     rel_dist_out = os.path.join(results_dir, "{}_rel_dist.pkl".format(input_id))
     lig_inters_out = os.path.join(results_dir, "{}_lig_inters.pkl".format(input_id))
@@ -1461,8 +1362,21 @@ def main(args):
 
         pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
         lig_data_df["binding_site"] = lig_data_df.lab.map(cluster_id_dict)
-        pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_paths}
+        #pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_paths}
+        pdb_files_dict = {}
+        for f in pdb_paths:
+            file_name = os.path.basename(f)
+            file_root, _ = os.path.splitext(os.path.splitext(file_name)[0])
+            if file_root not in pdb_files_dict.keys():
+                pdb_files_dict[file_root] = file_name
+        
+        print(pdb_files_dict)
+
         lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
+
+        #print(pdb_files_dict)
+
+        #print(lig_data_df.head())
 
         write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
 
@@ -1612,13 +1526,13 @@ def main(args):
 
         example_struc = os.path.join(clean_pdbs_dir, os.listdir(clean_pdbs_dir)[0])
         fasta_path = os.path.join(varalign_dir, "{}.fa".format(input_id))
-        hits_aln = fasta_path.replace(".fa", ".sto")
-        hits_aln_rf = fasta_path.replace(".fa", "_rf.sto")
+        fasta_root, _ = os.path.splitext(fasta_path)    
+        hits_aln = "{}.sto".format(fasta_root)  
+        hits_aln_rf = "{}_rf.sto".format(fasta_root)
         shenkin_out = os.path.join(varalign_dir, "{}_shenkin.csv".format(input_id))
         shenkin_filt_out = os.path.join(varalign_dir, "{}_shenkin_filt.csv".format(input_id))
 
         if override_variants or not os.path.isfile(hits_aln_rf):
-            print(example_struc, fasta_path)
             create_alignment_from_struc(example_struc, fasta_path)
             log.info("Saved MSA to file")
             pass
