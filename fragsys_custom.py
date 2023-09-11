@@ -276,7 +276,8 @@ def get_lig_data(supp_pdbs_dir, ligs_df_path):
         lois = ligs #currently taking all ligands
         for loi in lois:
             loi_df = hetatm_df.query('label_comp_id == @loi')
-            lois_df_un = loi_df.drop_duplicates(["label_comp_id", "label_asym_id"])[["label_comp_id", "label_asym_id", "auth_seq_id"]]
+            #lois_df_un = loi_df.drop_duplicates(["label_comp_id", "label_asym_id"])[["label_comp_id", "label_asym_id", "auth_seq_id"]]
+            lois_df_un = loi_df.drop_duplicates(["label_comp_id", "label_asym_id", "auth_seq_id"])[["label_comp_id", "label_asym_id", "auth_seq_id"]]
             lois_df_un["struc_name"] = struc
             ligs_df = ligs_df.append(lois_df_un)
     ligs_df = ligs_df[["struc_name","label_comp_id", "label_asym_id", "auth_seq_id"]]
@@ -304,7 +305,7 @@ def get_swissprot():
         proteins[acc]["seq"] = protein.seq
     return proteins
 
-def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, sifts_dir, swissprot):
+def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swissprot):
     """
     Retrieves the mapping between the UniProt sequence and the PDB sequence by doing an alignment.
     """
@@ -332,7 +333,7 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, sifts_dir, swisspr
     prointvar_mapping = prointvar_mapping[~prointvar_mapping.PDB_ResNum.isnull()]
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
     struc_root, _ = os.path.splitext(struc) 
-    prointvar_mapping_csv = os.path.join(sifts_dir, struc_root + ".mapping")
+    prointvar_mapping_csv = os.path.join(mappings_dir, struc_root + ".mapping")
     prointvar_mapping.to_csv(prointvar_mapping_csv, index = False)
     return prointvar_mapping
 
@@ -407,7 +408,7 @@ def move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_
             elif os.path.isfile(os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff))):
                 shutil.move(os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff)), pdb_clean_file_to)
 
-def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir):
+def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, mappings_dir):
     """
     Processes arpeggio output to generate the two tables that will
     be used later in the analysis.
@@ -444,7 +445,7 @@ def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir):
     
     ########################### ADDED TO AVOID INCORRECT BS DEFINITION DUE TO PDB RESNUMS ###########################
 
-    struc_mapping = pd.read_csv(os.path.join(sifts_dir, "{}.mapping".format(struc_root)))
+    struc_mapping = pd.read_csv(os.path.join(mappings_dir, "{}.mapping".format(struc_root)))
 
     mapping_dict = {}
     for chain, chain_df in struc_mapping.groupby("PDB_ChainID"):
@@ -1082,7 +1083,7 @@ def main(args):
     simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
     clean_pdbs_dir = os.path.join(output_dir, "clean_pdbs")
     pdb_clean_dir = os.path.join(output_dir, "pdb_clean")
-    sifts_dir = os.path.join(output_dir, "sifts")
+    mappings_dir = os.path.join(output_dir, "mappings")
     dssp_dir = os.path.join(output_dir, "dssp")
     arpeggio_dir = os.path.join(output_dir, "arpeggio")
     varalign_dir = os.path.join(output_dir, "varalign")
@@ -1090,7 +1091,7 @@ def main(args):
     dirs = [
         output_dir, results_dir, stamp_out_dir,
         supp_pdbs_dir, simple_pdbs_dir, clean_pdbs_dir,
-        pdb_clean_dir, sifts_dir, dssp_dir,
+        pdb_clean_dir, mappings_dir, dssp_dir,
         arpeggio_dir, varalign_dir
     ]
     
@@ -1215,20 +1216,27 @@ def main(args):
                 log.info("DSSP run successfully on {}".format(struc_root))
 
             ## UNIPROT MAPPING
-            struc_mapping_path = os.path.join(sifts_dir, "{}.mapping".format(struc_root))
+            struc_mapping_path = os.path.join(mappings_dir, "{}.mapping".format(struc_root))
             if os.path.isfile(struc_mapping_path):
                 mapping = pd.read_csv(struc_mapping_path)
                 log.debug("Mapping file for {} already exists".format(struc_root))
                 pass
             else:
-                mapping = retrieve_mapping_from_struc(struc, uniprot_id, simple_pdbs_dir, sifts_dir, swissprot)
+                mapping = retrieve_mapping_from_struc(struc, uniprot_id, simple_pdbs_dir, mappings_dir, swissprot)
                 log.info("Mapping file for {} generated".format(struc_root))
             
-            #print(mapping, dssp_data)
+            mapping.PDB_ResNum = mapping.PDB_ResNum.astype(int)
+            dssp_data.PDB_ResNum = dssp_data.PDB_ResNum.astype(int) 
+            #print(mapping.head(), dssp_data.head())
+            #print(mapping.PDB_ResNum.dtype, dssp_data.PDB_ResNum.dtype)
             mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum")
+
+            #print(mapping.head())
             mapped_dssps.append(mapping)
 
             mapped_dssp_df = pd.concat(mapped_dssps)
+
+            #print(mapped_dssp_df.head())
 
             mapped_dssp_df.to_pickle(os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id)))
     else:
@@ -1306,7 +1314,7 @@ def main(args):
                 log.warning("No LOIs in {}".format(struc_root))
                 continue
             else:
-                lig_cons_split, arpeggio_lig_cons = process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, sifts_dir) ### NOW PROCESSES ALL LIGANDS ###
+                lig_cons_split, arpeggio_lig_cons = process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, mappings_dir) ### NOW PROCESSES ALL LIGANDS ###
                 log.debug("Arpeggio output processed for {}!".format(struc_root))
         ligand_contact = arpeggio_lig_cons["PDB_ResNum"].astype(str)
         ligand_contact_list.append(ligand_contact)
@@ -1427,8 +1435,7 @@ def main(args):
         log.debug("Loaded residue --> [binding site ids] dictionary!")
 
     ### DSSP DATA ANALYSIS
-    #  
-    dsspd_filt = mapped_dssp_df.query('UniProt_ResNum == UniProt_ResNum and AA != "X" and RSA == RSA').copy()
+    dsspd_filt = mapped_dssp_df.query('UniProt_ResNum == UniProt_ResNum and PDB_ResName != "X" and RSA == RSA').copy()
     dsspd_filt.SS = dsspd_filt.SS.fillna("C")
     dsspd_filt.SS = dsspd_filt.SS.replace("", "C")
     dsspd_filt.UniProt_ResNum = dsspd_filt.UniProt_ResNum.astype(int)
@@ -1442,7 +1449,7 @@ def main(args):
 
     if override or not os.path.isfile(AA_dict_out):
         ress_AA_dict = {
-            up_resnum: dsspd_filt.query('UniProt_ResNum == @up_resnum').AA.mode()[0] # gets dict per UP residue and meore frequent AA.
+            up_resnum: dsspd_filt.query('UniProt_ResNum == @up_resnum').PDB_ResName.mode()[0] # gets dict per UP residue and more frequent AA.
             for up_resnum in dsspd_filt.UniProt_ResNum.unique().tolist()
         }
         dump_pickle(ress_AA_dict, AA_dict_out)
@@ -1453,7 +1460,7 @@ def main(args):
     
     if override or not os.path.isfile(RSA_dict_out):
         ress_RSA_dict = {
-            up_resnum: round(dsspd_filt.query('UniProt_ResNum == @up_resnum').RSA.mean(), 2) # gets dict per UP residue and meore frequent AA.
+            up_resnum: round(dsspd_filt.query('UniProt_ResNum == @up_resnum').RSA.mean(), 2) # gets dict per UP residue and average RSA.
             for up_resnum in dsspd_filt.UniProt_ResNum.unique().tolist()
         }
         dump_pickle(ress_RSA_dict, RSA_dict_out)
@@ -1464,7 +1471,7 @@ def main(args):
 
     if override or not os.path.isfile(SS_dict_out):
         ress_SS_dict = {
-            up_resnum: dsspd_filt.query('UniProt_ResNum == @up_resnum').SS.mode()[0] # gets dict per UP residue and meore frequent AA.
+            up_resnum: dsspd_filt.query('UniProt_ResNum == @up_resnum').SS.mode()[0] # gets dict per UP residue and more frequent SS.
             for up_resnum in dsspd_filt.UniProt_ResNum.unique().tolist()
         }
         dump_pickle(ress_SS_dict, SS_dict_out)
