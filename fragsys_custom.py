@@ -129,13 +129,13 @@ msa_fmt = config["formats"].get("msa_fmt")
 struc_fmt = config["formats"].get("struc_fmt")
 
 stamp_ROI = config["other"].get("stamp_roi")
-#arpeggio_dist = float(config["other"].get("arpeggio_dist"))
 
+arpeggio_dist = float(config["thresholds"].get("arpeggio_dist")) # this should not be needed anymore after we switch to pdbe-arpeggio
 CONS_t_h = float(config["thresholds"].get("CONS_t_h"))                      # conservation score upper threshold to consider position highly divergent. Currently only working with Shenkin divergence score.
 CONS_t_l = float(config["thresholds"].get("CONS_t_l"))                      # conservation score lower threshold to consider position highly conserved. Currenyly only working with Shenkin divergence score.
 CONS_ts = [CONS_t_l, CONS_t_h]
 JACKHMMER_n_it = int(config["thresholds"].get("JACKHMMER_n_it"))
-lig_clust_dist = float(config["thresholds"].get("clust_dist"))
+lig_clust_dist = float(config["thresholds"].get("lig_clust_dist"))
 MES_t = float(config["thresholds"].get("MES_t"))  
 MES_sig_t = float(config["thresholds"].get("MES_sig_t"))                          # Missense Enrichment Score threshold to consider a position missense-depleted, or enriched.
 
@@ -263,6 +263,18 @@ def remove_extra_ligs(supp_file, simple_file):
             df = df.query('label_asym_id in @chains')
         w = PDBXwriter(outputfile = simple_file)
         w.run(df, format_type = "pdb", category = "auth")
+
+def simplify_pdb(supp_file, simple_file):
+    """
+    Simplifies pdb file by removing all non-ATOM records.
+    """
+    df = PDBXreader(inputfile = supp_file).atoms(format_type = "pdb", excluded=())
+    df_hetatm = df.query('group_PDB != "ATOM"')
+    if df_hetatm.empty:
+        return # no HETATM records, no simple file is written
+    else:
+        w = PDBXwriter(outputfile = simple_file)
+        w.run(df_hetatm, format_type = "pdb", category = "auth")
 
 ## LIGAND FUNCTIONS
 
@@ -1002,7 +1014,7 @@ def get_OR(df, variant_col = "variants"):
         df.loc[i, "se_OR"] = round(se_or, 2)
     return df
 
-def add_miss_class(df, miss_df_out = None, cons_col = "shenkin", MES_t = MES_t, cons_ts = cons_ts, colours = consvar_class_colours):
+def add_miss_class(df, miss_df_out = None, cons_col = "shenkin", MES_t = MES_t, cons_ts = CONS_ts, colours = consvar_class_colours):
     """
     Adds two columns to missense dataframe. These columns will put columns
     into classes according to their divergence and missense enrichment score.
@@ -1054,9 +1066,9 @@ def merge_shenkin_df_and_mapping(shenkin_df, mapping_df, aln_ids):
 
 ### SETTING UP LOG
 
-logging.basicConfig(filename = "fragsys_custom.log", format = '%(asctime)s %(name)s [%(levelname)-8s] - %(message)s', level = logging.INFO)
+logging.basicConfig(filename = "fragsys_REVAMPED.log", format = '%(asctime)s %(name)s [%(levelname)-8s] - %(message)s', level = logging.INFO)
 
-log = logging.getLogger("FRAGSYS_CUSTOM")
+log = logging.getLogger("FRAGSYS_REVAMPED")
 
 ### MAIN FUNCTION
 
@@ -1081,7 +1093,6 @@ def main(args):
     ### SETTING UP DIRECTORIES
 
     input_id = os.path.normpath(input_dir).split(os.sep)[-1]
-    #wd = os.getcwd()
     output_dir = os.path.join(wd, "output", input_id)
     results_dir = os.path.join(output_dir, "results")
     stamp_out_dir = os.path.join(output_dir, "stamp_out")
@@ -1101,7 +1112,7 @@ def main(args):
         arpeggio_dir, varalign_dir
     ]
     
-    setup_dirs(dirs)
+    setup_dirs(dirs) # creates directory /output/input_dir_name and then all results subdirectories: results, stamp_out, clean_pdbs, etc...
 
     log.info("Directories created")
 
@@ -1170,13 +1181,17 @@ def main(args):
 
     move_stamp_output(prefix, stamp_out_dir, wd)
 
-    n_simple_pdbs = len(os.listdir(simple_pdbs_dir))
+    simple_pdbs = [f for f in os.listdir(simple_pdbs_dir) if f.endswith(".pdb")]
+    n_simple_pdbs = len(simple_pdbs) # number of simplified pdbs, will be 0 the first time thiis command is executed
 
     if n_simple_pdbs == n_domains:
         log.debug("Structure domains already simplified")
         pass
     else:
-        for file in os.listdir(supp_pdbs_dir):
+        supp_files = sorted([f for f in os.listdir(supp_pdbs_dir) if f.endswith(".pdb")])
+        shutil.copy(os.path.join(supp_pdbs_dir, supp_files[0]), simple_pdbs_dir) # copy first chain as is
+        print(f'Keeping protein atoms for {supp_files[0]}')
+        for file in supp_files[1:]: # we keep protei atoms for first chain
             if file.endswith(".pdb"):
                 supp_file = os.path.join(supp_pdbs_dir, file)
                 simple_file = os.path.join(simple_pdbs_dir, file) 
@@ -1184,10 +1199,14 @@ def main(args):
                     log.debug("Simple pdb file already exists")
                     pass
                 else:
-                    remove_extra_ligs(supp_file, simple_file)
-        log.info("All structure domains have been simplified")
+                    #remove_extra_ligs(supp_file, simple_file)
+                    simplify_pdb(supp_file, simple_file)
+        log.info("All structure domains have been simplified") # what we want to do here is seimply keep protein atoms for first chain, this is to make visualisation quicker and simpler
     
     log.info("PDB simplification completed")
+    
+    print("Finishing here!")
+    sys.exit(0)
 
     ### GET LIGAND DATA
 

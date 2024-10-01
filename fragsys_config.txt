@@ -29,6 +29,7 @@ lig_clust_metric = i_rel
 lig_clust_method = average
 
 [thresholds]
+arpeggio_dist = 5.0
 CONS_t_h = 75
 CONS_t_l = 25
 JACKHMMER_n_it = 3
