@@ -176,8 +176,9 @@ def generate_STAMP_domains(pdbs_dir, domains_out, roi = stamp_ROI):
     """
     Genereates domains file, needed to run STAMP.
     """
+    pdb_files = [file for file in os.listdir(pdbs_dir) if file.endswith(".pdb")]
     with open(domains_out, "w+") as fh:
-        for pdb in os.listdir(pdbs_dir):
+        for pdb in pdb_files:
             pdb_root, pdb_ext = os.path.splitext(pdb)
             if pdb_ext == ".pdb":
                 fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_root + "_" + roi, roi))
@@ -222,7 +223,6 @@ def move_supp_files(struc_files, supp_pdbs_dir, cwd):
     """
     Moves set of supperimposed coordinate files to appropriate directory.
     """
-    #cwd = os.getcwd()
     for file in struc_files:
         if os.path.isfile(os.path.join(cwd, file)):
             shutil.move(
@@ -234,7 +234,6 @@ def move_stamp_output(prefix, stamp_out_dir, cwd):
     """
     Moves STAMP output files to appropriate directory.
     """
-    #cwd = os.getcwd()
     stamp_files = sorted([file for file in os.listdir(cwd) if prefix in file]) + ["stamp_rough.trans"]
     for file in stamp_files:
         filepath = os.path.join(cwd, file)
@@ -249,20 +248,20 @@ def move_stamp_output(prefix, stamp_out_dir, cwd):
     if os.path.isfile(doms_from):
         shutil.move(doms_from, doms_to)
 
-def remove_extra_ligs(supp_file, simple_file):
-        """
-        Removes ligands present in non-ROI chains.
-        """
-        fname, _ = os.path.splitext(os.path.basename(supp_file))
-        chains_spec = fname.split("_")[-1]
-        df = PDBXreader(inputfile = supp_file).atoms(format_type = "pdb", excluded=())
-        if chains_spec == "ALL":
-            pass
-        else:
-            chains = list(chains_spec)
-            df = df.query('label_asym_id in @chains')
-        w = PDBXwriter(outputfile = simple_file)
-        w.run(df, format_type = "pdb", category = "auth")
+# def remove_extra_ligs(supp_file, simple_file):
+#         """
+#         Removes ligands present in non-ROI chains.
+#         """
+#         fname, _ = os.path.splitext(os.path.basename(supp_file))
+#         chains_spec = fname.split("_")[-1]
+#         df = PDBXreader(inputfile = supp_file).atoms(format_type = "pdb", excluded=())
+#         if chains_spec == "ALL":
+#             pass
+#         else:
+#             chains = list(chains_spec)
+#             df = df.query('label_asym_id in @chains')
+#         w = PDBXwriter(outputfile = simple_file)
+#         w.run(df, format_type = "pdb", category = "auth")
 
 def simplify_pdb(supp_file, simple_file):
     """
@@ -1124,18 +1123,43 @@ def main(args):
         log.info("Skipping to the end")
         sys.exit(0)
 
-    ### STAMP SECTION
-
     strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb") and "clean" not in f]
     n_strucs = len(strucs)
     log.info("Number of structures: {}".format(n_strucs))
+
+    ### CLEANING FILES
+
+    for struc in strucs:
+        struc_root, struc_ext = os.path.splitext(struc)  # "structure_name", ".pdb"
+        pdb_path = os.path.join(input_dir, struc)        # /input_dir/structure_name.pdb
+        pdb_path_root, _ =  os.path.splitext(pdb_path)   # /input_dir/structure_name
+        clean_struc_path_from = f'{pdb_path_root}.clean{struc_ext}' # /input_dir/structure_name.clean.pdb
+        clean_struc_path_to = os.path.join(clean_pdbs_dir, f'{struc_root}.clean{struc_ext}') # /output_dir/clean_pdbs/structure_name.clean.pdb
+        if os.path.isfile(clean_struc_path_to): # if clean file already exists in clean files dir
+            log.debug("PDB {} already cleaned".format(struc))
+            pass
+        else: # if clean file does not exist in clean files dir
+            cmd, ec = run_clean_pdb(pdb_path) # run pdb_clean.py on pdb file
+            if ec == 0:
+                log.debug("{} cleaned".format(struc))
+                if os.path.isfile(clean_struc_path_from): 
+                    shutil.move(clean_struc_path_from, clean_struc_path_to) # move clean file to clean files dir
+                for pdb_clean_suff in pdb_clean_suffixes: # for each suffix in pdb_clean_suffixes
+                    pdb_clean_file_from = os.path.join(input_dir, "{}.{}".format(struc, pdb_clean_suff))
+                    pdb_clean_file_to = os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff))
+                    if os.path.isfile(pdb_clean_file_from):
+                        shutil.move(pdb_clean_file_from, pdb_clean_file_to)
+            else:
+                log.critical("pdb_clean.py failed with {}".format(cmd))
+
+    ### STAMP SECTION
 
     domains_out = os.path.join(results_dir, "{}_stamp.domains".format(input_id))
     if os.path.isfile(domains_out):
         log.debug("STAMP domains file already exists")
         pass
     else:
-        generate_STAMP_domains(input_dir, domains_out)
+        generate_STAMP_domains(clean_pdbs_dir, domains_out)
         log.info("STAMP domains file generated")
 
     prefix = "{}_stamp".format(input_id)
