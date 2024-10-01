@@ -2,36 +2,38 @@
 
 [binaries]
 dssp_bin = /cluster/gjb_lab/2394007/miniconda/envs/msa/bin/mkdssp
+
 stamp_bin = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/bin/linux/stamp
 transform_bin = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/bin/linux/transform
+
 clean_pdb_python_bin = /cluster/gjb_lab/2394007/miniconda/envs/arpeggio/bin/python
 clean_pdb_bin = /cluster/gjb_lab/2394007/pandda_analysis/clean_pdb.py
+
 arpeggio_python_bin = /cluster/gjb_lab/2394007/miniconda/envs/arpeggio/bin/python
 arpeggio_bin = /homes/2394007/SM_VarAlign/arpeggio/arpeggio.py
 
 [dbs]
-gnomad_vcf = /homes/smacgowan/NOBACK/resources/gnomad/gnomad.exomes.r2.0.1.sites.vcf.gz
-swissprot_pkl = /cluster/gjb_lab/2394007/data/all_species/swissprot_rev_Nov21.pkl
-swissprot_path = /cluster/gjb_lab/2394007/data/all_species/swissprot_rev_Nov21.fasta
 ensembl_sqlite = /cluster/gjb_lab/2394007/pandda_analysis/phase5/prots/.varalign/ensembl_cache.sqlite
+gnomad_vcf = /homes/smacgowan/NOBACK/resources/gnomad/gnomad.exomes.r2.0.1.sites.vcf.gz
+swissprot_pkl = /cluster/gjb_lab/2394007/data/all_species/swissprot_15_09_2023_NR.pkl
+swissprot = /cluster/gjb_lab/2394007/data/all_species/swissprot_15_09_2023_NR.fasta
+
+[formats]
+msa_fmt = stockholm
+struc_fmt = pdb
 
 [other]
 stampdir = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/defs/
 stamp_roi = ALL
-mes_sig_t = 0.2
-msa_fmt = stockholm
-struc_fmt = pdb
-arpeggio_dist = 5.0
-n_hmmer_its = 3
-
-[clustering]
-clust_dist = 0.50
-clust_metric = i_rel
-clust_method = average
+lig_clust_metric = i_rel
+lig_clust_method = average
 
 [thresholds]
+CONS_t_h = 75
+CONS_t_l = 25
+JACKHMMER_n_it = 3
+lig_clust_dist = 0.50
+MES_sig_t = 0.2
 MES_t = 1.0
-cons_t_h = 75
-cons_t_l = 25
 
 ### END OF CONFIG FILE ###

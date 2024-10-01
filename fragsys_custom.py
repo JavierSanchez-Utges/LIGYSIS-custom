@@ -114,24 +114,30 @@ clean_pdb_python_bin = config["binaries"].get("clean_pdb_python_bin")
 clean_pdb_bin = config["binaries"].get("clean_pdb_bin")
 arpeggio_python_bin = config["binaries"].get("arpeggio_python_bin")
 arpeggio_bin = config["binaries"].get("arpeggio_bin")
+
 gnomad_vcf = config["dbs"].get("gnomad_vcf")
 swissprot_pkl = config["dbs"].get("swissprot_pkl")
-swissprot_path = config["dbs"].get("swissprot_path")
+swissprot_path = config["dbs"].get("swissprot")
 ensembl_sqlite_path = config["dbs"].get("ensembl_sqlite")
+
 stampdir = config["other"].get("stampdir")
-clust_dist = float(config["clustering"].get("clust_dist"))
-clust_metric = config["clustering"].get("clust_metric")
-clust_method = config["clustering"].get("clust_method")
-mes_sig_t = float(config["other"].get("mes_sig_t"))
-msa_fmt = config["other"].get("msa_fmt")
-struc_fmt = config["other"].get("struc_fmt")
+lig_clust_metric = config["other"].get("lig_clust_metric")
+lig_clust_method = config["other"].get("lig_clust_method")
+
+
+msa_fmt = config["formats"].get("msa_fmt")
+struc_fmt = config["formats"].get("struc_fmt")
+
 stamp_ROI = config["other"].get("stamp_roi")
-arpeggio_dist = float(config["other"].get("arpeggio_dist"))
-n_hmmer_its = int(config["other"].get("n_hmmer_its"))
-MES_t = float(config["thresholds"].get("MES_t"))                            # Missense Enrichment Score threshold to consider a position missense-depleted, or enriched.
-cons_t_h = float(config["thresholds"].get("cons_t_h"))                      # conservation score upper threshold to consider position highly divergent. Currently only working with Shenkin divergence score.
-cons_t_l = float(config["thresholds"].get("cons_t_l"))                      # conservation score lower threshold to consider position highly conserved. Currenyly only working with Shenkin divergence score.
-cons_ts = [cons_t_l, cons_t_h]
+#arpeggio_dist = float(config["other"].get("arpeggio_dist"))
+
+CONS_t_h = float(config["thresholds"].get("CONS_t_h"))                      # conservation score upper threshold to consider position highly divergent. Currently only working with Shenkin divergence score.
+CONS_t_l = float(config["thresholds"].get("CONS_t_l"))                      # conservation score lower threshold to consider position highly conserved. Currenyly only working with Shenkin divergence score.
+CONS_ts = [CONS_t_l, CONS_t_h]
+JACKHMMER_n_it = int(config["thresholds"].get("JACKHMMER_n_it"))
+lig_clust_dist = float(config["thresholds"].get("clust_dist"))
+MES_t = float(config["thresholds"].get("MES_t"))  
+MES_sig_t = float(config["thresholds"].get("MES_sig_t"))                          # Missense Enrichment Score threshold to consider a position missense-depleted, or enriched.
 
 ### FUNCTIONS
 
@@ -695,7 +701,7 @@ def get_residue_bs_membership(cluster_ress):
 
 ### CONSERVATION + VARIATION FUNCTIONS
 
-def create_alignment_from_struc(example_struc, fasta_path, pdb_fmt = struc_fmt, n_it = n_hmmer_its, seqdb = swissprot_path):
+def create_alignment_from_struc(example_struc, fasta_path, pdb_fmt = struc_fmt, n_it = JACKHMMER_n_it, seqdb = swissprot_path):
     """
     Given an example structure, creates and reformats an MSA.
     """
@@ -721,7 +727,7 @@ def create_fasta_from_seq(seq, out):
     with open(out, "w+") as fh:
         fh.write(">query\n{}\n".format(seq))
 
-def jackhmmer(seq, hits_out, hits_aln, n_it = n_hmmer_its, seqdb = swissprot_path):
+def jackhmmer(seq, hits_out, hits_aln, n_it = JACKHMMER_n_it, seqdb = swissprot_path):
     """
     Runs jackhmmer on an input seq for a number of iterations and returns exit code, should be 0 if all is OK.
     """
@@ -1326,7 +1332,7 @@ def main(args):
     pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
 
     ligs = ligs_df.label_comp_id.unique().tolist()
-    string_name = "{}_BS_def_{}_{}_{}".format(input_id, clust_method, clust_metric, clust_dist)
+    string_name = "{}_BS_def_{}_{}_{}".format(input_id, lig_clust_method, lig_clust_metric, lig_clust_dist)
     bs_def_out = os.path.join(results_dir, "{}.pkl".format(string_name))
     attr_out = os.path.join(results_dir, "{}.attr".format(string_name))
     chimera_script_out = os.path.join(results_dir, "{}.com".format(string_name))
@@ -1363,8 +1369,8 @@ def main(args):
     else:
         labs = lig_data_df.lab.tolist()
         condensed_dist_mat = scipy.spatial.distance.squareform(dist_df) # condensed distance matrix to be used for clustering
-        linkage = scipy.cluster.hierarchy.linkage(condensed_dist_mat, method = clust_method, optimal_ordering = True)
-        cut_tree = scipy.cluster.hierarchy.cut_tree(linkage, height = clust_dist)
+        linkage = scipy.cluster.hierarchy.linkage(condensed_dist_mat, method = lig_clust_method, optimal_ordering = True)
+        cut_tree = scipy.cluster.hierarchy.cut_tree(linkage, height = lig_clust_dist)
         cluster_ids = [int(cut) for cut in cut_tree]
         cluster_id_dict = {labs[i]: cluster_ids[i] for i in range(len(labs))} #dictionary indicating membership for each lig
 
