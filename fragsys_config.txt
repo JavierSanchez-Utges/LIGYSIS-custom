@@ -20,7 +20,6 @@ swissprot = /cluster/gjb_lab/2394007/data/all_species/swissprot_15_09_2023_NR.fa
 
 [formats]
 msa_fmt = stockholm
-struc_fmt = pdb
 
 [other]
 stampdir = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/defs/

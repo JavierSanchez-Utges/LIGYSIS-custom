@@ -32,6 +32,7 @@ from prointvar.pdbx import PDBXreader
 from prointvar.pdbx import PDBXwriter
 import matplotlib.patches as mpatches
 from prointvar.sifts import SIFTSreader
+from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 from prointvar.config import config as cfg
 from prointvar.dssp import DSSPrunner, DSSPreader
 from scipy.spatial.distance import squareform, pdist
@@ -40,11 +41,11 @@ from prointvar.fetchers import download_structure_from_pdbe
 
 ### DICTIONARIES AND LISTS
 
-arpeggio_suffixes = [
-    "atomtypes", "bs_contacts", "contacts", "specific.sift", 
-    "sift","specific.siftmatch", "siftmatch", "specific.polarmatch",
-    "polarmatch", "ri", "rings", "ari", "amri", "amam", "residue_sifts"
-]
+# arpeggio_suffixes = [
+#     "atomtypes", "bs_contacts", "contacts", "specific.sift", 
+#     "sift","specific.siftmatch", "siftmatch", "specific.polarmatch",
+#     "polarmatch", "ri", "rings", "ari", "amri", "amam", "residue_sifts"
+# ]
 
 pdb_clean_suffixes = ["break_residues", "breaks"]
 
@@ -100,6 +101,24 @@ consvar_class_colours = [
     "royalblue", "green", "grey", "firebrick", "orange"
 ]
 
+interaction_to_color = { # following Arpeggio's colour scheme
+    'clash': '#000000',
+    'covalent':'#999999',
+    'vdw_clash': '#999999',
+    'vdw': '#999999',
+    'proximal': '#999999',
+    'hbond': '#f04646',
+    'weak_hbond': '#fc7600',
+    'xbond': '#3977db', #halogen bond
+    'ionic': '#e3e159',
+    'metal_complex': '#800080',
+    'aromatic': '#00ccff',
+    'hydrophobic': '#006633',
+    'carbonyl': '#ff007f',
+    'polar': '#f04646',
+    'weak_polar': '#fc7600',
+}
+
 wd = os.getcwd()
 
 ### CONFIG FILE READING AND VARIABLE SAVING
@@ -124,13 +143,11 @@ stampdir = config["other"].get("stampdir")
 lig_clust_metric = config["other"].get("lig_clust_metric")
 lig_clust_method = config["other"].get("lig_clust_method")
 
-
 msa_fmt = config["formats"].get("msa_fmt")
-struc_fmt = config["formats"].get("struc_fmt")
 
 stamp_ROI = config["other"].get("stamp_roi")
 
-arpeggio_dist = float(config["thresholds"].get("arpeggio_dist")) # this should not be needed anymore after we switch to pdbe-arpeggio
+#arpeggio_dist = float(config["thresholds"].get("arpeggio_dist"))            # this should not be needed anymore after we switch to pdbe-arpeggio
 CONS_t_h = float(config["thresholds"].get("CONS_t_h"))                      # conservation score upper threshold to consider position highly divergent. Currently only working with Shenkin divergence score.
 CONS_t_l = float(config["thresholds"].get("CONS_t_l"))                      # conservation score lower threshold to consider position highly conserved. Currenyly only working with Shenkin divergence score.
 CONS_ts = [CONS_t_l, CONS_t_h]
@@ -248,56 +265,42 @@ def move_stamp_output(prefix, stamp_out_dir, cwd):
     if os.path.isfile(doms_from):
         shutil.move(doms_from, doms_to)
 
-# def remove_extra_ligs(supp_file, simple_file):
-#         """
-#         Removes ligands present in non-ROI chains.
-#         """
-#         fname, _ = os.path.splitext(os.path.basename(supp_file))
-#         chains_spec = fname.split("_")[-1]
-#         df = PDBXreader(inputfile = supp_file).atoms(format_type = "pdb", excluded=())
-#         if chains_spec == "ALL":
-#             pass
-#         else:
-#             chains = list(chains_spec)
-#             df = df.query('label_asym_id in @chains')
-#         w = PDBXwriter(outputfile = simple_file)
-#         w.run(df, format_type = "pdb", category = "auth")
-
-def simplify_pdb(supp_file, simple_file):
+def simplify_pdb(supp_file, simple_file, struc_fmt = "mmcif"):
     """
     Simplifies pdb file by removing all non-ATOM records.
     """
-    df = PDBXreader(inputfile = supp_file).atoms(format_type = "pdb", excluded=())
+    df = PDBXreader(inputfile = supp_file).atoms(format_type = struc_fmt, excluded=())
     df_hetatm = df.query('group_PDB != "ATOM"')
     if df_hetatm.empty:
         return # no HETATM records, no simple file is written
     else:
         w = PDBXwriter(outputfile = simple_file)
-        w.run(df_hetatm, format_type = "pdb", category = "auth")
+        w.run(df_hetatm, format_type = struc_fmt, category = "auth")
 
 ## LIGAND FUNCTIONS
 
-def get_lig_data(supp_pdbs_dir, ligs_df_path):
+def get_lig_data(supp_pdbs_dir, ligs_df_path, struc_fmt = "mmcif"):
     """
     From a directory containing a set of structurally superimposed pdbs,
     writes a .pkl file indicating the name, chain and residue number of the
     ligand(s) of interest in every pdb.
     """
     ligs_df = pd.DataFrame([])
-    for struc in os.listdir(supp_pdbs_dir):
+    supp_pdb_files = [file for file in os.listdir(supp_pdbs_dir) if file.endswith(".pdb")]
+    for struc in supp_pdb_files:
         struc_path = os.path.join(supp_pdbs_dir, struc)
-        df = PDBXreader(inputfile = struc_path).atoms(format_type = "pdb", excluded=())
+        df = PDBXreader(inputfile = struc_path).atoms(format_type = struc_fmt, excluded=())
         hetatm_df = df.query('group_PDB == "HETATM"')
         ligs = hetatm_df.label_comp_id.unique().tolist()
         #lois = [lig for lig in ligs if lig not in non_relevant]
         lois = ligs #currently taking all ligands
         for loi in lois:
-            loi_df = hetatm_df.query('auth_comp_id == @loi')
+            loi_df = hetatm_df.query('label_comp_id == @loi')
             #lois_df_un = loi_df.drop_duplicates(["label_comp_id", "label_asym_id"])[["label_comp_id", "label_asym_id", "auth_seq_id"]]
-            lois_df_un = loi_df.drop_duplicates(["auth_comp_id", "auth_asym_id", "auth_seq_id"])[["auth_comp_id", "auth_asym_id", "auth_seq_id"]] # changing this to auth, cause it seems pdbe-arpeggio uses auth.
+            lois_df_un = loi_df.drop_duplicates(["label_comp_id", "auth_asym_id", "auth_seq_id"])[["label_comp_id", "auth_asym_id", "auth_seq_id"]] # changing this to auth, cause it seems pdbe-arpeggio uses auth (except for _com_id).
             lois_df_un["struc_name"] = struc
             ligs_df = ligs_df.append(lois_df_un)
-    ligs_df = ligs_df[["struc_name", "auth_comp_id", "auth_asym_id", "auth_seq_id"]]
+    ligs_df = ligs_df[["struc_name", "label_comp_id", "auth_asym_id", "auth_seq_id"]]
     ligs_df.to_pickle(ligs_df_path)
     return ligs_df
 
@@ -322,16 +325,16 @@ def get_swissprot():
         proteins[acc]["seq"] = protein.seq
     return proteins
 
-def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swissprot):
+def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swissprot, struc_fmt = "mmcif"):
     """
     Retrieves the mapping between the UniProt sequence and the PDB sequence by doing an alignment.
     """
     input_struct = os.path.join(struc_dir, struc)
-    pdb_structure = PDBXreader(inputfile = input_struct).atoms(format_type = "pdb", excluded=()) # ProIntVar reads the local file
+    pdb_structure = PDBXreader(inputfile = input_struct).atoms(format_type = struc_fmt, excluded=()) # ProIntVar reads the local file
     
     seq_record = str(swissprot[uniprot_id]["seq"])
-    pps = pdb_structure.query('group_PDB == "ATOM"')[['label_comp_id', 'label_asym_id', 'label_seq_id_full']].drop_duplicates().groupby('label_asym_id')  # groupby chain
-    pdb_chain_seqs = [(chain, SeqUtils.seq1(''.join(seq['label_comp_id'].values)), seq['label_seq_id_full'].values) for chain, seq in pps] # list of tuples like: [(chain_id, chain_seq, [chain resnums])]
+    pps = pdb_structure.query('group_PDB == "ATOM"')[['label_comp_id', 'auth_asym_id', 'auth_seq_id']].drop_duplicates().groupby('auth_asym_id')  # groupby chain
+    pdb_chain_seqs = [(chain, SeqUtils.seq1(''.join(seq['label_comp_id'].values)), seq['auth_seq_id'].values) for chain, seq in pps] # list of tuples like: [(chain_id, chain_seq, [chain resnums])]
     alignments = [pairwise2.align.globalxs(str(seq_record),chain_seq[1], -5, -1) for chain_seq in pdb_chain_seqs] # list of lists of tuples containing SwissProt seq - PDB chain seq pairwise alignment
     
     maps = []
@@ -350,7 +353,8 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swis
     prointvar_mapping = prointvar_mapping[~prointvar_mapping.PDB_ResNum.isnull()]
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
     struc_root, _ = os.path.splitext(struc) 
-    prointvar_mapping_csv = os.path.join(mappings_dir, struc_root + "map.csv")
+    prointvar_mapping_csv = os.path.join(mappings_dir, struc_root + "_mapping.csv")
+    prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(str) # PDB_ResNum is a string, not an integer
     prointvar_mapping.to_csv(prointvar_mapping_csv, index = False)
     return prointvar_mapping
 
@@ -385,18 +389,6 @@ def run_clean_pdb(pdb_path):
     exit_code = os.system(cmd)
     return cmd, exit_code
 
-# def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist): # OLD
-#     """
-#     Runs Arpeggio.
-#     """
-#     args = [
-#         arpeggio_python_bin, arpeggio_bin, pdb_path, "-s",
-#         "RESNAME:{}".format(lig_name), "-i", str(dist), # "-v" removing verbose
-#     ]
-#     cmd = " ".join(args)
-#     exit_code = os.system(cmd)
-#     return cmd, exit_code
-
 def run_arpeggio(pdb_path, lig_sel, out_dir):
     """
     runs Arpeggio
@@ -429,14 +421,14 @@ def switch_columns(df, names):
 
     return df
 
-def map_values(row, pdb2up, pdb_id):
+def map_values(row, pdb2up):
     """
     maps UniProt ResNums from SIFTS dictionary from CIF file to Arpeggio dataframe.
     """
     try:
-        return pdb2up[pdb_id][row['orig_label_asym_id_end']][row['auth_seq_id_end']]
+        return pdb2up[row.auth_asym_id_end][row.auth_seq_id_end]
     except KeyError:
-        log.debug("Residue {} {} has no mapping to UniProt".format(row['orig_label_asym_id_end'], row['auth_seq_id_end']))
+        log.debug(f'Residue {row.auth_seq_id_end} chain {row.auth_asym_id_end} has no mapping to UniProt')
         return np.nan # if there is no mapping, return NaN
 
 def create_resnum_mapping_dict(df):
@@ -474,6 +466,9 @@ def process_arpeggio_df(arp_df, pdb_id, ligand_names, pdb2up):
     arp_df = arp_df.join(arp_df_end_expanded).drop(labels='end', axis=1)
     arp_df = arp_df.join(arp_df_bgn_expanded, lsuffix = "_end", rsuffix = "_bgn").drop(labels='bgn', axis = 1)
 
+    arp_df.auth_seq_id_bgn = arp_df.auth_seq_id_bgn.astype(str)
+    arp_df.auth_seq_id_end = arp_df.auth_seq_id_end.astype(str)
+
     inter_df = arp_df.query('interacting_entities == "INTER" & type == "atom-atom"').copy().reset_index(drop = True)
 
     inter_df = inter_df[inter_df['contact'].apply(lambda x: 'clash' not in x)].copy().reset_index(drop = True) # filtering out clashes
@@ -491,41 +486,13 @@ def process_arpeggio_df(arp_df, pdb_id, ligand_names, pdb2up):
     switched_df = switched_df.query('label_comp_id_end in @pdb_resnames').copy() # filtering out non-protein-ligand interactions
 
     # Apply the function and create a new column
-    switched_df["UniProt_ResNum_end"] = switched_df.apply(lambda row: map_values(row, pdb2up, pdb_id), axis=1)
+    switched_df["UniProt_ResNum_end"] = switched_df.apply(lambda row: map_values(row, pdb2up), axis=1)
     
     switched_df = switched_df.sort_values(by=["auth_asym_id_end", "UniProt_ResNum_end", "auth_atom_id_end"]).reset_index(drop = True)
     
     return switched_df, "OK"
 
-def move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, strucs, struc2ligs):
-    """
-    Moves pdb_clean.py and Arpeggio output files to appropriate directory.
-    """  
-    for struc in strucs:
-        struc_root, _ = os.path.splitext(struc) 
-        clean_struc = struc_root + ".clean.pdb"
-        clean_struc_path_from = os.path.join(supp_pdbs_dir, clean_struc)
-        clean_struc_path_to = os.path.join(clean_pdbs_dir, clean_struc)
-        if os.path.isfile(clean_struc_path_from):
-            shutil.move(clean_struc_path_from, clean_struc_path_to)
-        for arpeggio_suff in arpeggio_suffixes:
-            for the_lig in struc2ligs[struc]:
-                arpeggio_file_from_supp = os.path.join(supp_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
-                arpeggio_file_to = os.path.join(arpeggio_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
-                arpeggio_file_from_clean = os.path.join(clean_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
-                if os.path.isfile(arpeggio_file_from_supp):
-                    shutil.move(arpeggio_file_from_supp, arpeggio_file_to)
-                elif os.path.isfile(arpeggio_file_from_clean):
-                    shutil.move(arpeggio_file_from_clean, arpeggio_file_to)
-        for pdb_clean_suff in pdb_clean_suffixes:
-            pdb_clean_file_from = os.path.join(supp_pdbs_dir, "{}.{}".format(struc, pdb_clean_suff))
-            pdb_clean_file_to = os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff))
-            if os.path.isfile(pdb_clean_file_from):
-                shutil.move(pdb_clean_file_from, pdb_clean_file_to)
-            elif os.path.isfile(os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff))):
-                shutil.move(os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff)), pdb_clean_file_to)
-
-def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, mappings_dir):
+def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, mappings_dir, struc_fmt = "mmcif"): 
     """
     Processes arpeggio output to generate the two tables that will
     be used later in the analysis.
@@ -542,7 +509,7 @@ def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, mappings_dir
 
         lig_cons_split_lig = reformat_arpeggio(all_cons_lig)
 
-        lig_cons_split_lig = add_resnames_to_arpeggio_table(struc, clean_pdbs_dir, lig_cons_split_lig)
+        lig_cons_split_lig = add_resnames_to_arpeggio_table(struc, clean_pdbs_dir, lig_cons_split_lig, struc_fmt)
 
         lig_cons_split_lig = ligand_to_atom2(lig_cons_split_lig, lig)
         
@@ -618,14 +585,14 @@ def reformat_arpeggio(arpeggio_df):
     lig_cons_split["ResNum (Atom2)"] = lig_cons_split["ResNum (Atom2)"].astype(int)
     return lig_cons_split
 
-def add_resnames_to_arpeggio_table(structure, clean_pdbs_dir, arpeggio_cons_split):
+def add_resnames_to_arpeggio_table(structure, clean_pdbs_dir, arpeggio_cons_split, struc_fmt = "mmcif"):
     """
     adds residue names to arpeggio table, needed for later table mergings
     """
     structure_root, _ = os.path.splitext(structure) 
     structure_path = os.path.join(clean_pdbs_dir, "{}.clean.pdb".format(structure_root))
-    pdb_structure = PDBXreader(inputfile = structure_path).atoms(format_type = "pdb", excluded=())
-    resnames_dict = {(row.label_asym_id, int(row.label_seq_id)): row.label_comp_id for index, row in pdb_structure.drop_duplicates(['label_asym_id', 'label_seq_id']).iterrows()}
+    pdb_structure = PDBXreader(inputfile = structure_path).atoms(format_type = struc_fmt, excluded=())
+    resnames_dict = {(row.auth_asym_id, int(row.auth_seq_id)): row.label_comp_id for index, row in pdb_structure.drop_duplicates(['auth_asym_id', 'auth_seq_id']).iterrows()}
     arpeggio_cons_split["ResName (Atom1)"] = arpeggio_cons_split.set_index(["Chain (Atom1)", "ResNum (Atom1)"]).index.map(resnames_dict.get)
     arpeggio_cons_split["ResName (Atom2)"] = arpeggio_cons_split.set_index(["Chain (Atom2)", "ResNum (Atom2)"]).index.map(resnames_dict.get)
     return arpeggio_cons_split
@@ -664,6 +631,55 @@ def contact_type(row):
         return "backbone"
     else:
         return "sidechain"
+
+def generate_dictionary(mmcif_file):
+    """
+    Generates coordinate dictionary from a mmCIF file.
+    """
+    # Parse the mmCIF file
+    mmcif_dict = MMCIF2Dict(mmcif_file)
+
+    # Initialise the result dictionary
+    result = {}
+
+    # Iterate through the atoms and populate the dictionary
+    for i, auth_asym_id in enumerate(mmcif_dict["_atom_site.auth_asym_id"]):
+        label_comp_id_end = mmcif_dict["_atom_site.label_comp_id"][i]
+        auth_seq_id = mmcif_dict["_atom_site.auth_seq_id"][i]
+        auth_atom_id_end = mmcif_dict["_atom_site.auth_atom_id"][i]
+        x = mmcif_dict["_atom_site.Cartn_x"][i]
+        y = mmcif_dict["_atom_site.Cartn_y"][i]
+        z = mmcif_dict["_atom_site.Cartn_z"][i]
+
+        # Dictionary creation
+        result[auth_asym_id, label_comp_id_end, auth_seq_id, auth_atom_id_end] = [x, y, z]
+
+    return result
+
+def determine_width(interactions):
+    """
+    Generates cylinder width for 3DMol.js interaction
+    representation depending on Arpeggio contact
+    fingerprint.
+    """
+    return 0.125 if 'vdw_clash' in interactions else 0.0625
+
+def determine_color(interactions):
+    """
+    Generates cylinder colour for 3DMol.js interaction
+    representation depending on Arpeggio contact
+    fingerprint.
+    """
+    undef = ['covalent', 'vdw', 'vdw_clash', 'proximal']
+    if len(interactions) == 1 and interactions[0] in undef:
+        return '#999999'
+    else:
+        colors = [interaction_to_color[interaction] for interaction in interactions if interaction in interaction_to_color and interaction not in undef]
+        if colors:
+            return colors[0]
+        else:
+            log.critical("No color found for {}".format(interactions))
+            return None  # Return the first color found, or None if no match
 
 ### FUNCTIONS FOR SITE DEFINITION
 
@@ -812,11 +828,11 @@ def get_residue_bs_membership(cluster_ress):
 
 ### CONSERVATION + VARIATION FUNCTIONS
 
-def create_alignment_from_struc(example_struc, fasta_path, pdb_fmt = struc_fmt, n_it = JACKHMMER_n_it, seqdb = swissprot_path):
+def create_alignment_from_struc(example_struc, fasta_path, struc_fmt = "mmcif", n_it = JACKHMMER_n_it, seqdb = swissprot_path):
     """
     Given an example structure, creates and reformats an MSA.
     """
-    create_fasta_from_seq(get_seq_from_pdb(example_struc, pdb_fmt = pdb_fmt), fasta_path) # CREATES FASTA FILE FROM PDB FILE
+    create_fasta_from_seq(get_seq_from_pdb(example_struc, struc_fmt = struc_fmt), fasta_path) # CREATES FASTA FILE FROM PDB FILE
     fasta_root, _ = os.path.splitext(fasta_path)    
     hits_out = "{}.out".format(fasta_root)
     hits_aln = "{}.sto".format(fasta_root)
@@ -824,12 +840,12 @@ def create_alignment_from_struc(example_struc, fasta_path, pdb_fmt = struc_fmt, 
     jackhmmer(fasta_path, hits_out, hits_aln , n_it = n_it, seqdb = seqdb,) # RUNS JACKHAMMER USING AS INPUT THE SEQUENCE FROM THE PDB AND GENERATES ALIGNMENT
     add_acc2msa(hits_aln, hits_aln_rf)
 
-def get_seq_from_pdb(pdb_path, pdb_fmt = struc_fmt): # MIGHT NEED TO BE MORE SELECTIVE WITH CHAIN, ETC
+def get_seq_from_pdb(pdb_path, struc_fmt = "mmcif"): # MIGHT NEED TO BE MORE SELECTIVE WITH CHAIN, ETC
     """
     Generates aa sequence string from a pdb coordinates file.
     """
-    struc = PDBXreader(pdb_path).atoms(format_type = pdb_fmt, excluded=())
-    return "".join([aa_code[aa] for aa in struc.query('group_PDB == "ATOM"').drop_duplicates(["auth_seq_id"]).auth_comp_id.tolist()])
+    struc = PDBXreader(pdb_path).atoms(format_type = struc_fmt, excluded=())
+    return "".join([aa_code[aa] for aa in struc.query('group_PDB == "ATOM"').drop_duplicates(["auth_seq_id"]).label_comp_id.tolist()])
 
 def create_fasta_from_seq(seq, out):
     """
@@ -1185,6 +1201,7 @@ def main(args):
 
     input_dir = args.input_dir
     uniprot_id = args.uniprot_id
+    struc_fmt = args.struc_fmt
     override = args.override
     override_variants = args.override_variants
     run_variants = args.variants
@@ -1223,12 +1240,16 @@ def main(args):
         log.info("Final results table already exists")
         log.info("Skipping to the end")
         sys.exit(0)
-
-    strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb") and "clean" not in f]
+    if struc_fmt == "mmcif":
+        strucs = [f for f in os.listdir(input_dir) if f.endswith(".cif") and "clean" not in f] # different extension depending on structure format
+    elif struc_fmt == "pdb":
+        strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb") and "clean" not in f]
     n_strucs = len(strucs)
     log.info("Number of structures: {}".format(n_strucs))
 
     ### CLEANING FILES
+
+    ## if structure format is mmcif, we need to convert to pdb since clean_pdb.py only works with pdb files
 
     for struc in strucs:
         struc_root, struc_ext = os.path.splitext(struc)  # "structure_name", ".pdb"
@@ -1325,7 +1346,7 @@ def main(args):
                     pass
                 else:
                     #remove_extra_ligs(supp_file, simple_file)
-                    simplify_pdb(supp_file, simple_file)
+                    simplify_pdb(supp_file, simple_file, struc_fmt)
         log.info("All structure domains have been simplified") # what we want to do here is seimply keep protein atoms for first chain, this is to make visualisation quicker and simpler
     
     log.info("PDB simplification completed")
@@ -1334,7 +1355,7 @@ def main(args):
 
     lig_data_path = os.path.join(results_dir, "{}_lig_data.pkl".format(input_id))
     if override or not os.path.isfile(lig_data_path):
-        ligs_df = get_lig_data(simple_pdbs_dir, lig_data_path) # this now uses auth fields as it seems that is what pdbe-arpeggio uses.
+        ligs_df = get_lig_data(simple_pdbs_dir, lig_data_path, struc_fmt) # this now uses auth fields as it seems that is what pdbe-arpeggio uses.
         log.info("Saved ligand data")
     else:
         ligs_df = pd.read_pickle(lig_data_path)
@@ -1342,68 +1363,69 @@ def main(args):
 
     ### UNIPROT MAPPING SECTION
 
+    swissprot = load_pickle(swissprot_pkl)
+    log.debug("Swissprot loaded")
+
+    for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
+        struc_root, _ =  os.path.splitext(struc)
+        struc_mapping_path = os.path.join(mappings_dir, "{}_mapping.csv".format(struc_root))
+        struc_mapping_dict_path = os.path.join(mappings_dir, "{}_mapping.pkl".format(struc_root))
+        if override or not os.path.isfile(struc_mapping_path):
+            mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, mappings_dir, swissprot, struc_fmt = struc_fmt) # giving supp, here, instead of simple because we want them all
+            mapping_dict = create_resnum_mapping_dict(mapping)
+            dump_pickle(mapping_dict, struc_mapping_dict_path)
+            log.info("Mapping files for {} generated".format(struc_root))
+        else:
+            mapping = pd.read_csv(struc_mapping_path)
+            mapping_dict = load_pickle(struc_mapping_dict_path)
+            log.debug("Mapping files for {} already exists".format(struc_root))
+
+    log.info("UniProt mapping section completed")
+            
+    ### DSSP SECTION   
+
     dssp_mapped_out = os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id))
 
     if override or not os.path.isfile(dssp_mapped_out):
-
-        swissprot = load_pickle(swissprot_pkl)
-        log.debug("Swissprot loaded")
 
         mapped_dssps = []
         for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
             ## DSSP
             struc_root, _ =  os.path.splitext(struc)
             dssp_csv = os.path.join(dssp_dir, "{}.csv".format(struc_root))
-            if os.path.isfile(dssp_csv):
-                dssp_data = pd.read_csv(dssp_csv)
-                log.debug("DSSP data already exists")
-                pass
-            else:
+
+            if override or not os.path.isfile(dssp_csv):
                 dssp_data = run_dssp(struc, supp_pdbs_dir, dssp_dir)
                 log.info("DSSP run successfully on {}".format(struc_root))
-
-            ## UNIPROT MAPPING
-            struc_mapping_path = os.path.join(mappings_dir, "{}.mapping".format(struc_root))
-            if os.path.isfile(struc_mapping_path):
-                mapping = pd.read_csv(struc_mapping_path)
-                log.debug("Mapping file for {} already exists".format(struc_root))
-                pass
             else:
-                mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, mappings_dir, swissprot) # giving supp, here, instead of simple because we want them all
-
-                mapping_dict = 
-                log.info("Mapping file for {} generated".format(struc_root))
+                dssp_data = pd.read_csv(dssp_csv)
+                log.debug("DSSP data already exists")
             
-            mapping.PDB_ResNum = mapping.PDB_ResNum.astype(int)
-            dssp_data.PDB_ResNum = dssp_data.PDB_ResNum.astype(int) 
-            #print(mapping.head(), dssp_data.head())
-            #print(mapping.PDB_ResNum.dtype, dssp_data.PDB_ResNum.dtype)
-            mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum")
+            ## UNIPROT MAPPING
 
-            #print(mapping.head())
+            dssp_data.PDB_ResNum = dssp_data.PDB_ResNum.astype(str) 
+
+            mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum") # don't think this merging worked well
+
             mapped_dssps.append(mapping)
 
             mapped_dssp_df = pd.concat(mapped_dssps)
-
-            #print(mapped_dssp_df.head())
 
             mapped_dssp_df.to_pickle(os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id)))
     else:
         mapped_dssp_df = pd.read_pickle(dssp_mapped_out)
         log.debug("Loaded mapped DSSP data")
 
-    log.info("DSSP and UNIPROT mapping completed")
+    log.info("DSSP section completed")
 
     ### ARPEGGIO PART ###
-    # print(ligs_df)
 
     struc2ligs = {}
     for struc in fnames:
         struc_root, _ =  os.path.splitext(struc)
         struc2ligs[struc] = []
         struc_df = ligs_df.query('struc_name == @struc')
-        print(struc_df)
-        # break
+
         pdb_path = os.path.join(supp_pdbs_dir, struc)
         pdb_path_root, _ =  os.path.splitext(pdb_path)
 
@@ -1422,87 +1444,53 @@ def main(args):
         ]
         w = PDBXwriter(outputfile = cif_out)
         w.run(pdb_df[cif_cols_order], format_type = "mmcif")
-        # print(cif_df.head())
         
-
-        # clean_pdb_path = "{}.clean.pdb".format(pdb_path_root)
-        # pdb_clean_1 = os.path.join(clean_pdbs_dir, "{}.clean.pdb".format(struc_root))
-        # if os.path.isfile(pdb_clean_1) or os.path.isfile(clean_pdb_path):
-        #     log.debug("PDB {} already cleaned".format(struc))
-        #     pass
-        # else:
-        #     cmd, ec = run_clean_pdb(pdb_path)
-        #     if ec == 0:
-        #         log.debug("{} cleaned".format(struc))
-        #         pass
-        #     else:
-        #         log.critical("pdb_clean.py failed with {}".format(cmd))
-
-        # ligs = struc_df.label_comp_id.unique().tolist()
-
         if struc_df.empty:
             log.warning("No ligands in {}".format(struc))
             continue
 
         lig_sel = " ".join(["/{}/{}/".format(row.auth_asym_id, row.auth_seq_id) for _, row in  struc_df.iterrows()])
 
-        ligand_names = list(set([row.auth_comp_id for _, row in struc_df.iterrows()]))
+        ligand_names = list(set([row.label_comp_id for _, row in struc_df.iterrows()]))
 
         arpeggio_default_json_name = os.path.basename(struc).split(".")[0]
         arpeggio_default_out = os.path.join(arpeggio_dir, f"{arpeggio_default_json_name}.json")  # this is how arpeggio names the file (splits by "." and takes the first part)
 
         arpeggio_out = os.path.join(arpeggio_dir, struc_root + ".json")
-
-        ec, cmd = run_arpeggio(cif_out, lig_sel, arpeggio_dir)
-        if ec != 0:
-            log.error("Arpeggio failed for {} with {}".format(struc, cmd))
-            continue
-
-        print(arpeggio_default_out, arpeggio_out)
-
-        shutil.move(arpeggio_default_out, arpeggio_out)
-
-        arp_df = pd.read_json(arpeggio_out)
-
         arpeggio_proc_df_out = os.path.join(arpeggio_dir, struc_root + "_proc.pkl")
 
-        proc_inters, fp_stat = process_arpeggio_df(arp_df, struc_root, ligand_names, pdb2up)
-        
+        if override or not os.path.isfile(arpeggio_proc_df_out):
 
-        # for the_lig in ligs: # RUNs ARPEGGIO ONCE FOR EACH LIGAND
-        #     struc2ligs[struc].append(the_lig)
+            if override or not os.path.isfile(arpeggio_out):
 
-        #     if not os.path.isfile(clean_pdb_path):
-        #         clean_pdb_path = pdb_clean_1
+                ec, cmd = run_arpeggio(cif_out, lig_sel, arpeggio_dir)
+                if ec != 0:
+                    log.error("Arpeggio failed for {} with {}".format(struc, cmd))
+                    continue
 
-        #     lig_contacts_1 = os.path.join(arpeggio_dir, "{}.clean_{}.bs_contacts".format(struc_root, the_lig))
-        #     lig_contacts_2 = os.path.join(simple_pdbs_dir, "{}.clean_{}.bs_contacts".format(struc_root, the_lig))
-            
-        #     if os.path.isfile(lig_contacts_1) or os.path.isfile(lig_contacts_2):
-        #         log.debug("Arpeggio already ran for {} in {}!".format(the_lig, struc))
-        #         continue
-        #     else:
-        #         cmd, ec = run_arpeggio(clean_pdb_path, the_lig)
-        #         if ec == 0:
-        #             log.debug("Arpeggio ran sucessfully for {} in {}!".format(the_lig, struc))
-        #             for arpeggio_suff in arpeggio_suffixes: # CHANGES ARPEGGIO OUTPUT FILENAMES SO THEY INCLUDE LIGAND NAME
-        #                 arpeggio_file_old_name_supp = os.path.join(simple_pdbs_dir, "{}.clean.{}".format(struc_root, arpeggio_suff))
-        #                 arpeggio_file_new_name_supp = os.path.join(simple_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
-        #                 arpeggio_file_old_name_clean = os.path.join(clean_pdbs_dir, "{}.clean.{}".format(struc_root, arpeggio_suff))
-        #                 arpeggio_file_new_name_clean = os.path.join(clean_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
-        #                 if os.path.isfile(arpeggio_file_old_name_supp):
-        #                     os.rename(arpeggio_file_old_name_supp, arpeggio_file_new_name_supp)
-        #                 elif os.path.isfile(arpeggio_file_old_name_clean):
-        #                     os.rename(arpeggio_file_old_name_clean, arpeggio_file_new_name_clean)
-        #         else:
-        #             log.error("Arpeggio failed for {} with {}".format(struc_root, cmd))
-        #             pass
+                shutil.move(arpeggio_default_out, arpeggio_out)
+
+            arp_df = pd.read_json(arpeggio_out)
+
+            pdb2up = load_pickle(os.path.join(mappings_dir, "{}_mapping.pkl".format(struc_root)))
+
+            proc_inters, fp_stat = process_arpeggio_df(arp_df, struc_root, ligand_names, pdb2up)
+
+            coords_dict = generate_dictionary(cif_out)
+
+            proc_inters["coords_end"] = proc_inters.set_index(["auth_asym_id_end", "label_comp_id_end", "auth_seq_id_end", "auth_atom_id_end"]).index.map(coords_dict.get)
+            proc_inters["coords_bgn"] = proc_inters.set_index(["auth_asym_id_bgn", "label_comp_id_bgn", "auth_seq_id_bgn", "auth_atom_id_bgn"]).index.map(coords_dict.get)
+
+            proc_inters["width"] = proc_inters["contact"].apply(determine_width)
+            proc_inters["color"] = proc_inters["contact"].apply(determine_color)
+            proc_inters.to_pickle(arpeggio_proc_df_out)
+            log.debug("Arpeggio processed data saved")
+    else:
+        proc_inters = pd.read_pickle(arpeggio_proc_df_out)
+        log.debug("Loaded arpeggio processed data")
 
     print("Finishing here!")
     sys.exit(0)
-    
-    
-    move_arpeggio_output(simple_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, fnames, struc2ligs)
 
     ligand_contact_list = []
     for struc in fnames:
@@ -1908,6 +1896,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = "Clusters ligands, define, and characterise binding sites.")
     parser.add_argument("input_dir", type = str, help = "Path to directory containing input structures")
     parser.add_argument("uniprot_id", type = str, help = "Uniprot ID of the protein")
+    parser.add_argument("--struc_fmt", type = str, choices=["pdb", "mmcif"], default = "mmcif", help="Format of the input structures (must be 'pdb' or 'mmcif')")
     parser.add_argument("--override", help = "Override any previously generated files.", action = "store_true")
     parser.add_argument("--override_variants", help = "Override any previously generated files (ONLY VARIANTS SECTION).", action = "store_true")
     parser.add_argument("--variants", help = "Retrieves Human variants form MSA and generates tables.", action = "store_true")
