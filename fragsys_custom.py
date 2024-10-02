@@ -292,12 +292,12 @@ def get_lig_data(supp_pdbs_dir, ligs_df_path):
         #lois = [lig for lig in ligs if lig not in non_relevant]
         lois = ligs #currently taking all ligands
         for loi in lois:
-            loi_df = hetatm_df.query('label_comp_id == @loi')
+            loi_df = hetatm_df.query('auth_comp_id == @loi')
             #lois_df_un = loi_df.drop_duplicates(["label_comp_id", "label_asym_id"])[["label_comp_id", "label_asym_id", "auth_seq_id"]]
-            lois_df_un = loi_df.drop_duplicates(["label_comp_id", "label_asym_id", "auth_seq_id"])[["label_comp_id", "label_asym_id", "auth_seq_id"]]
+            lois_df_un = loi_df.drop_duplicates(["auth_comp_id", "auth_asym_id", "auth_seq_id"])[["auth_comp_id", "auth_asym_id", "auth_seq_id"]] # changing this to auth, cause it seems pdbe-arpeggio uses auth.
             lois_df_un["struc_name"] = struc
             ligs_df = ligs_df.append(lois_df_un)
-    ligs_df = ligs_df[["struc_name","label_comp_id", "label_asym_id", "auth_seq_id"]]
+    ligs_df = ligs_df[["struc_name", "auth_comp_id", "auth_asym_id", "auth_seq_id"]]
     ligs_df.to_pickle(ligs_df_path)
     return ligs_df
 
@@ -327,7 +327,7 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swis
     Retrieves the mapping between the UniProt sequence and the PDB sequence by doing an alignment.
     """
     input_struct = os.path.join(struc_dir, struc)
-    pdb_structure = PDBXreader(inputfile = input_struct).atoms(format_type = "pdb") # ProIntVar reads the local file
+    pdb_structure = PDBXreader(inputfile = input_struct).atoms(format_type = "pdb", excluded=()) # ProIntVar reads the local file
     
     seq_record = str(swissprot[uniprot_id]["seq"])
     pps = pdb_structure.query('group_PDB == "ATOM"')[['label_comp_id', 'label_asym_id', 'label_seq_id_full']].drop_duplicates().groupby('label_asym_id')  # groupby chain
@@ -350,7 +350,7 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swis
     prointvar_mapping = prointvar_mapping[~prointvar_mapping.PDB_ResNum.isnull()]
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
     struc_root, _ = os.path.splitext(struc) 
-    prointvar_mapping_csv = os.path.join(mappings_dir, struc_root + ".mapping")
+    prointvar_mapping_csv = os.path.join(mappings_dir, struc_root + "map.csv")
     prointvar_mapping.to_csv(prointvar_mapping_csv, index = False)
     return prointvar_mapping
 
@@ -361,7 +361,7 @@ def run_dssp(struc, supp_pdbs_dir, dssp_dir):
     Runs DSSP, saves and return resulting output dataframe
     """
     struc_root, _ = os.path.splitext(struc)
-    dssp_csv = os.path.join(dssp_dir, "dssp_" + struc_root + ".csv") # output csv filepath
+    dssp_csv = os.path.join(dssp_dir, struc_root + ".csv") # output csv filepath
     dssp_out = os.path.join(dssp_dir, struc_root + ".dssp")
     struc_in = os.path.join(supp_pdbs_dir, struc)
     DSSPrunner(inputfile = struc_in, outputfile = dssp_out).write()            # runs DSSP
@@ -385,17 +385,117 @@ def run_clean_pdb(pdb_path):
     exit_code = os.system(cmd)
     return cmd, exit_code
 
-def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist):
+# def run_arpeggio(pdb_path, lig_name, dist = arpeggio_dist): # OLD
+#     """
+#     Runs Arpeggio.
+#     """
+#     args = [
+#         arpeggio_python_bin, arpeggio_bin, pdb_path, "-s",
+#         "RESNAME:{}".format(lig_name), "-i", str(dist), # "-v" removing verbose
+#     ]
+#     cmd = " ".join(args)
+#     exit_code = os.system(cmd)
+#     return cmd, exit_code
+
+def run_arpeggio(pdb_path, lig_sel, out_dir):
     """
-    Runs Arpeggio.
+    runs Arpeggio
     """
     args = [
-        arpeggio_python_bin, arpeggio_bin, pdb_path, "-s",
-        "RESNAME:{}".format(lig_name), "-i", str(dist), # "-v" removing verbose
+        arpeggio_python_bin, arpeggio_bin, pdb_path,
+        "-s", lig_sel, "-o", out_dir, "--mute"
     ]
     cmd = " ".join(args)
     exit_code = os.system(cmd)
-    return cmd, exit_code
+    return exit_code, cmd
+
+def switch_columns(df, names):
+    """
+    Switches columns in Arpeggio DataFrame, so that ligand atoms and protein
+    atoms are always on the same column.
+    """
+    # Columns to switch
+    columns_to_switch = [
+        'auth_asym_id', 'auth_atom_id', 'auth_seq_id', 'label_comp_id'
+    ]
+
+    # Iterate through the DataFrame and switch columns where necessary
+    for index, row in df.iterrows():
+        if row['label_comp_id_end'] in names:
+            for col in columns_to_switch:
+                bgn_col = f"{col}_bgn"
+                end_col = f"{col}_end"
+                df.at[index, bgn_col], df.at[index, end_col] = df.at[index, end_col], df.at[index, bgn_col]
+
+    return df
+
+def map_values(row, pdb2up, pdb_id):
+    """
+    maps UniProt ResNums from SIFTS dictionary from CIF file to Arpeggio dataframe.
+    """
+    try:
+        return pdb2up[pdb_id][row['orig_label_asym_id_end']][row['auth_seq_id_end']]
+    except KeyError:
+        log.debug("Residue {} {} has no mapping to UniProt".format(row['orig_label_asym_id_end'], row['auth_seq_id_end']))
+        return np.nan # if there is no mapping, return NaN
+
+def create_resnum_mapping_dict(df):
+    """
+    Creates a dictionary with the mapping between PDB_ResNum and UniProt_ResNum
+    froma  previously created dataframe.
+    """
+    chain_mapping = {}
+    
+    # Iterate over the dataframe
+    for index, row in df.iterrows():
+        chain_id = row['PDB_ChainID']
+        pdb_resnum = row['PDB_ResNum']
+        uniprot_resnum = row['UniProt_ResNum']
+        
+        # Initialize dictionary for the chain ID if it doesn't exist
+        if chain_id not in chain_mapping:
+            chain_mapping[chain_id] = {}
+        
+        # Add PDB_ResNum as key and UniProt_ResNum as value for the current chain
+        chain_mapping[chain_id][str(pdb_resnum)] = uniprot_resnum
+    
+    return chain_mapping
+
+def process_arpeggio_df(arp_df, pdb_id, ligand_names, pdb2up):
+    """
+    Process Arpeggio Df to put in appropriate
+    format to extract fingerprings. Also filter out
+    non-relevant interactions.
+    """
+    
+    arp_df_end_expanded = arp_df['end'].apply(pd.Series)
+    arp_df_bgn_expanded = arp_df['bgn'].apply(pd.Series)
+
+    arp_df = arp_df.join(arp_df_end_expanded).drop(labels='end', axis=1)
+    arp_df = arp_df.join(arp_df_bgn_expanded, lsuffix = "_end", rsuffix = "_bgn").drop(labels='bgn', axis = 1)
+
+    inter_df = arp_df.query('interacting_entities == "INTER" & type == "atom-atom"').copy().reset_index(drop = True)
+
+    inter_df = inter_df[inter_df['contact'].apply(lambda x: 'clash' not in x)].copy().reset_index(drop = True) # filtering out clashes
+    
+    inter_df = inter_df.query('label_comp_id_bgn in @pdb_resnames or label_comp_id_end in @pdb_resnames').copy().reset_index(drop = True) # filtering out ligand-ligand interactions
+    
+    if inter_df.empty:
+        log.warning("No protein-ligand interaction  for {}".format(pdb_id))
+        return inter_df, "no-PL-inters"
+    
+    inter_df = inter_df.query('label_comp_id_bgn in @ligand_names or label_comp_id_end in @ligand_names').copy().reset_index(drop = True) # filtering out non-LOI interactions (only to avoid re-running Arpeggio, once it has been run with wrong selection)
+    
+    switched_df = switch_columns(inter_df, ligand_names)
+
+    switched_df = switched_df.query('label_comp_id_end in @pdb_resnames').copy() # filtering out non-protein-ligand interactions
+
+    # Apply the function and create a new column
+    switched_df["UniProt_ResNum_end"] = switched_df.apply(lambda row: map_values(row, pdb2up, pdb_id), axis=1)
+    
+    switched_df = switched_df.sort_values(by=["auth_asym_id_end", "UniProt_ResNum_end", "auth_atom_id_end"]).reset_index(drop = True)
+    
+    return switched_df, "OK"
 
 def move_arpeggio_output(supp_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, strucs, struc2ligs):
     """
@@ -1096,6 +1196,7 @@ def main(args):
     results_dir = os.path.join(output_dir, "results")
     stamp_out_dir = os.path.join(output_dir, "stamp_out")
     supp_pdbs_dir = os.path.join(output_dir, "supp_pdbs")
+    supp_cifs_dir = os.path.join(output_dir, "supp_cifs")
     simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
     clean_pdbs_dir = os.path.join(output_dir, "clean_pdbs")
     pdb_clean_dir = os.path.join(output_dir, "pdb_clean")
@@ -1108,7 +1209,7 @@ def main(args):
         output_dir, results_dir, stamp_out_dir,
         supp_pdbs_dir, simple_pdbs_dir, clean_pdbs_dir,
         pdb_clean_dir, mappings_dir, dssp_dir,
-        arpeggio_dir, varalign_dir
+        arpeggio_dir, varalign_dir, supp_cifs_dir,
     ]
     
     setup_dirs(dirs) # creates directory /output/input_dir_name and then all results subdirectories: results, stamp_out, clean_pdbs, etc...
@@ -1228,19 +1329,16 @@ def main(args):
         log.info("All structure domains have been simplified") # what we want to do here is seimply keep protein atoms for first chain, this is to make visualisation quicker and simpler
     
     log.info("PDB simplification completed")
-    
-    print("Finishing here!")
-    sys.exit(0)
 
     ### GET LIGAND DATA
 
     lig_data_path = os.path.join(results_dir, "{}_lig_data.pkl".format(input_id))
-    if os.path.isfile(lig_data_path):
-        ligs_df = pd.read_pickle(lig_data_path)
-        log.debug("Saved ligand data")
+    if override or not os.path.isfile(lig_data_path):
+        ligs_df = get_lig_data(simple_pdbs_dir, lig_data_path) # this now uses auth fields as it seems that is what pdbe-arpeggio uses.
+        log.info("Saved ligand data")
     else:
-        ligs_df = get_lig_data(simple_pdbs_dir, lig_data_path)
-        log.info("Loaded ligand data")
+        ligs_df = pd.read_pickle(lig_data_path)
+        log.debug("Loaded ligand data")
 
     ### UNIPROT MAPPING SECTION
 
@@ -1255,13 +1353,13 @@ def main(args):
         for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
             ## DSSP
             struc_root, _ =  os.path.splitext(struc)
-            dssp_csv = os.path.join(dssp_dir, "dssp_{}.csv".format(struc_root))
+            dssp_csv = os.path.join(dssp_dir, "{}.csv".format(struc_root))
             if os.path.isfile(dssp_csv):
                 dssp_data = pd.read_csv(dssp_csv)
                 log.debug("DSSP data already exists")
                 pass
             else:
-                dssp_data = run_dssp(struc, simple_pdbs_dir, dssp_dir)
+                dssp_data = run_dssp(struc, supp_pdbs_dir, dssp_dir)
                 log.info("DSSP run successfully on {}".format(struc_root))
 
             ## UNIPROT MAPPING
@@ -1271,7 +1369,9 @@ def main(args):
                 log.debug("Mapping file for {} already exists".format(struc_root))
                 pass
             else:
-                mapping = retrieve_mapping_from_struc(struc, uniprot_id, simple_pdbs_dir, mappings_dir, swissprot)
+                mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, mappings_dir, swissprot) # giving supp, here, instead of simple because we want them all
+
+                mapping_dict = 
                 log.info("Mapping file for {} generated".format(struc_root))
             
             mapping.PDB_ResNum = mapping.PDB_ResNum.astype(int)
@@ -1293,59 +1393,114 @@ def main(args):
         log.debug("Loaded mapped DSSP data")
 
     log.info("DSSP and UNIPROT mapping completed")
-    
+
     ### ARPEGGIO PART ###
+    # print(ligs_df)
 
     struc2ligs = {}
     for struc in fnames:
         struc_root, _ =  os.path.splitext(struc)
         struc2ligs[struc] = []
         struc_df = ligs_df.query('struc_name == @struc')
-        pdb_path = os.path.join(simple_pdbs_dir, struc)
+        print(struc_df)
+        # break
+        pdb_path = os.path.join(supp_pdbs_dir, struc)
         pdb_path_root, _ =  os.path.splitext(pdb_path)
-        clean_pdb_path = "{}.clean.pdb".format(pdb_path_root)
-        pdb_clean_1 = os.path.join(clean_pdbs_dir, "{}.clean.pdb".format(struc_root))
-        if os.path.isfile(pdb_clean_1) or os.path.isfile(clean_pdb_path):
-            log.debug("PDB {} already cleaned".format(struc))
-            pass
-        else:
-            cmd, ec = run_clean_pdb(pdb_path)
-            if ec == 0:
-                log.debug("{} cleaned".format(struc))
-                pass
-            else:
-                log.critical("pdb_clean.py failed with {}".format(cmd))
 
-        ligs = struc_df.label_comp_id.unique().tolist()
+        pdb_df = PDBXreader(pdb_path).atoms(format_type = struc_fmt, excluded=())
+        cif_out = os.path.join(supp_cifs_dir, "{}.cif".format(struc_root))
 
-        for the_lig in ligs: # RUNs ARPEGGIO ONCE FOR EACH LIGAND
-            struc2ligs[struc].append(the_lig)
+        pdb_df["label_alt_id"] = "."
+        # cif_df["pdbx_PDB_ins_code"] = "?"
+        pdb_df["pdbx_formal_charge"] = "?"
 
-            if not os.path.isfile(clean_pdb_path):
-                clean_pdb_path = pdb_clean_1
+        cif_cols_order = [
+            "group_PDB", "id", "type_symbol", "label_atom_id", "label_alt_id", "label_comp_id", "label_asym_id",
+            # "label_entity_id",
+            "label_seq_id", "pdbx_PDB_ins_code", "Cartn_x", "Cartn_y", "Cartn_z", "occupancy",
+            "B_iso_or_equiv", "pdbx_formal_charge", "auth_seq_id", "auth_comp_id", "auth_asym_id", "auth_atom_id", "pdbx_PDB_model_num"
+        ]
+        w = PDBXwriter(outputfile = cif_out)
+        w.run(pdb_df[cif_cols_order], format_type = "mmcif")
+        # print(cif_df.head())
+        
 
-            lig_contacts_1 = os.path.join(arpeggio_dir, "{}.clean_{}.bs_contacts".format(struc_root, the_lig))
-            lig_contacts_2 = os.path.join(simple_pdbs_dir, "{}.clean_{}.bs_contacts".format(struc_root, the_lig))
+        # clean_pdb_path = "{}.clean.pdb".format(pdb_path_root)
+        # pdb_clean_1 = os.path.join(clean_pdbs_dir, "{}.clean.pdb".format(struc_root))
+        # if os.path.isfile(pdb_clean_1) or os.path.isfile(clean_pdb_path):
+        #     log.debug("PDB {} already cleaned".format(struc))
+        #     pass
+        # else:
+        #     cmd, ec = run_clean_pdb(pdb_path)
+        #     if ec == 0:
+        #         log.debug("{} cleaned".format(struc))
+        #         pass
+        #     else:
+        #         log.critical("pdb_clean.py failed with {}".format(cmd))
+
+        # ligs = struc_df.label_comp_id.unique().tolist()
+
+        if struc_df.empty:
+            log.warning("No ligands in {}".format(struc))
+            continue
+
+        lig_sel = " ".join(["/{}/{}/".format(row.auth_asym_id, row.auth_seq_id) for _, row in  struc_df.iterrows()])
+
+        ligand_names = list(set([row.auth_comp_id for _, row in struc_df.iterrows()]))
+
+        arpeggio_default_json_name = os.path.basename(struc).split(".")[0]
+        arpeggio_default_out = os.path.join(arpeggio_dir, f"{arpeggio_default_json_name}.json")  # this is how arpeggio names the file (splits by "." and takes the first part)
+
+        arpeggio_out = os.path.join(arpeggio_dir, struc_root + ".json")
+
+        ec, cmd = run_arpeggio(cif_out, lig_sel, arpeggio_dir)
+        if ec != 0:
+            log.error("Arpeggio failed for {} with {}".format(struc, cmd))
+            continue
+
+        print(arpeggio_default_out, arpeggio_out)
+
+        shutil.move(arpeggio_default_out, arpeggio_out)
+
+        arp_df = pd.read_json(arpeggio_out)
+
+        arpeggio_proc_df_out = os.path.join(arpeggio_dir, struc_root + "_proc.pkl")
+
+        proc_inters, fp_stat = process_arpeggio_df(arp_df, struc_root, ligand_names, pdb2up)
+        
+
+        # for the_lig in ligs: # RUNs ARPEGGIO ONCE FOR EACH LIGAND
+        #     struc2ligs[struc].append(the_lig)
+
+        #     if not os.path.isfile(clean_pdb_path):
+        #         clean_pdb_path = pdb_clean_1
+
+        #     lig_contacts_1 = os.path.join(arpeggio_dir, "{}.clean_{}.bs_contacts".format(struc_root, the_lig))
+        #     lig_contacts_2 = os.path.join(simple_pdbs_dir, "{}.clean_{}.bs_contacts".format(struc_root, the_lig))
             
-            if os.path.isfile(lig_contacts_1) or os.path.isfile(lig_contacts_2):
-                log.debug("Arpeggio already ran for {} in {}!".format(the_lig, struc))
-                continue
-            else:
-                cmd, ec = run_arpeggio(clean_pdb_path, the_lig)
-                if ec == 0:
-                    log.debug("Arpeggio ran sucessfully for {} in {}!".format(the_lig, struc))
-                    for arpeggio_suff in arpeggio_suffixes: # CHANGES ARPEGGIO OUTPUT FILENAMES SO THEY INCLUDE LIGAND NAME
-                        arpeggio_file_old_name_supp = os.path.join(simple_pdbs_dir, "{}.clean.{}".format(struc_root, arpeggio_suff))
-                        arpeggio_file_new_name_supp = os.path.join(simple_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
-                        arpeggio_file_old_name_clean = os.path.join(clean_pdbs_dir, "{}.clean.{}".format(struc_root, arpeggio_suff))
-                        arpeggio_file_new_name_clean = os.path.join(clean_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
-                        if os.path.isfile(arpeggio_file_old_name_supp):
-                            os.rename(arpeggio_file_old_name_supp, arpeggio_file_new_name_supp)
-                        elif os.path.isfile(arpeggio_file_old_name_clean):
-                            os.rename(arpeggio_file_old_name_clean, arpeggio_file_new_name_clean)
-                else:
-                    log.error("Arpeggio failed for {} with {}".format(struc_root, cmd))
-                    pass
+        #     if os.path.isfile(lig_contacts_1) or os.path.isfile(lig_contacts_2):
+        #         log.debug("Arpeggio already ran for {} in {}!".format(the_lig, struc))
+        #         continue
+        #     else:
+        #         cmd, ec = run_arpeggio(clean_pdb_path, the_lig)
+        #         if ec == 0:
+        #             log.debug("Arpeggio ran sucessfully for {} in {}!".format(the_lig, struc))
+        #             for arpeggio_suff in arpeggio_suffixes: # CHANGES ARPEGGIO OUTPUT FILENAMES SO THEY INCLUDE LIGAND NAME
+        #                 arpeggio_file_old_name_supp = os.path.join(simple_pdbs_dir, "{}.clean.{}".format(struc_root, arpeggio_suff))
+        #                 arpeggio_file_new_name_supp = os.path.join(simple_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
+        #                 arpeggio_file_old_name_clean = os.path.join(clean_pdbs_dir, "{}.clean.{}".format(struc_root, arpeggio_suff))
+        #                 arpeggio_file_new_name_clean = os.path.join(clean_pdbs_dir, "{}.clean_{}.{}".format(struc_root, the_lig, arpeggio_suff))
+        #                 if os.path.isfile(arpeggio_file_old_name_supp):
+        #                     os.rename(arpeggio_file_old_name_supp, arpeggio_file_new_name_supp)
+        #                 elif os.path.isfile(arpeggio_file_old_name_clean):
+        #                     os.rename(arpeggio_file_old_name_clean, arpeggio_file_new_name_clean)
+        #         else:
+        #             log.error("Arpeggio failed for {} with {}".format(struc_root, cmd))
+        #             pass
+
+    print("Finishing here!")
+    sys.exit(0)
+    
     
     move_arpeggio_output(simple_pdbs_dir, clean_pdbs_dir, arpeggio_dir, pdb_clean_dir, fnames, struc2ligs)
 
