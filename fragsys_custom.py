@@ -39,13 +39,24 @@ from scipy.spatial.distance import squareform, pdist
 from prointvar.fetchers import download_sifts_from_ebi
 from prointvar.fetchers import download_structure_from_pdbe
 
-### DICTIONARIES AND LISTS
+## UTILITIES
 
-# arpeggio_suffixes = [
-#     "atomtypes", "bs_contacts", "contacts", "specific.sift", 
-#     "sift","specific.siftmatch", "siftmatch", "specific.polarmatch",
-#     "polarmatch", "ri", "rings", "ari", "amri", "amam", "residue_sifts"
-# ]
+def dump_pickle(data, pickle_out):
+    """
+    Dumps pickle.
+    """
+    with open(pickle_out, "wb") as f:
+        pickle.dump(data, f)
+
+def load_pickle(pickle_in):
+    """
+    Loads pickle.
+    """
+    with open(pickle_in, "rb") as f:
+        data = pickle.load(f)
+    return data
+
+### DICTIONARIES AND LISTS
 
 pdb_clean_suffixes = ["break_residues", "breaks"]
 
@@ -94,8 +105,20 @@ aa_code = {
     "SUI" : 'D',
 }
 
-sample_colors = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#911eb4", "#46f0f0", "#f032e6", "#bcf60c", "#fabebe", "#008080", "#e6beff", "#9a6324", "#fffac8", "#800000", "#aaffc3", "#808000", "#ffd8b1", "#000075", "#808080", "#ffffff", "#000000"]
-#sample_colors = list(itertools.islice(rgbs(), 200)) # new_colours
+cif_cols_order = [
+    "group_PDB", "id", "type_symbol", "label_atom_id", "label_alt_id", "label_comp_id", "label_asym_id",
+    # "label_entity_id",
+    "label_seq_id", "pdbx_PDB_ins_code", "Cartn_x", "Cartn_y", "Cartn_z", "occupancy",
+    "B_iso_or_equiv", "pdbx_formal_charge", "auth_seq_id", "auth_comp_id", "auth_asym_id", "auth_atom_id", "pdbx_PDB_model_num"
+]
+
+chimeraX_commands = [
+    "color white; set bgColor white",
+    "set silhouette ON; set silhouetteWidth 2; set silhouetteColor black",
+    #"color byattribute binding_site palette paired-12; col ::binding_site==-1 grey",
+    "~disp; select ~protein; ~select : HOH; ~select ::binding_site==-1; disp sel; ~sel",
+    "surf; surface color white; transparency 70 s;"
+]
 
 consvar_class_colours = [
     "royalblue", "green", "grey", "firebrick", "orange"
@@ -118,6 +141,8 @@ interaction_to_color = { # following Arpeggio's colour scheme
     'polar': '#f04646',
     'weak_polar': '#fc7600',
 }
+
+bss_colors = load_pickle("./sample_colors_hex.pkl") # sample colors
 
 wd = os.getcwd()
 
@@ -157,23 +182,6 @@ MES_t = float(config["thresholds"].get("MES_t"))
 MES_sig_t = float(config["thresholds"].get("MES_sig_t"))                          # Missense Enrichment Score threshold to consider a position missense-depleted, or enriched.
 
 ### FUNCTIONS
-
-## UTILITIES
-
-def dump_pickle(data, pickle_out):
-    """
-    Dumps pickle.
-    """
-    with open(pickle_out, "wb") as f:
-        pickle.dump(data, f)
-
-def load_pickle(pickle_in):
-    """
-    Loads pickle.
-    """
-    with open(pickle_in, "rb") as f:
-        data = pickle.load(f)
-    return data
 
 ## SETUP FUNCTIONS
 
@@ -492,145 +500,17 @@ def process_arpeggio_df(arp_df, pdb_id, ligand_names, pdb2up):
     
     return switched_df, "OK"
 
-def process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, mappings_dir, struc_fmt = "mmcif"): 
+def get_inters(fingerprints_dict):
     """
-    Processes arpeggio output to generate the two tables that will
-    be used later in the analysis.
+    Returns all ligand fingerprints from fingerprints dict.
     """
-    lig_cons_splits = []
-    arpeggio_lig_conss = []
+    return [v for v in fingerprints_dict.values()]
 
-    struc_root, _ = os.path.splitext(struc)
-        
-    for lig in all_ligs:
-        arpeggio_out_path_lig = os.path.join(arpeggio_dir, "{}.clean_{}.bs_contacts".format(struc_root, lig))
-        
-        all_cons_lig = pd.read_table(arpeggio_out_path_lig, header = None)
-
-        lig_cons_split_lig = reformat_arpeggio(all_cons_lig)
-
-        lig_cons_split_lig = add_resnames_to_arpeggio_table(struc, clean_pdbs_dir, lig_cons_split_lig, struc_fmt)
-
-        lig_cons_split_lig = ligand_to_atom2(lig_cons_split_lig, lig)
-        
-        lig_cons_split_lig["contact_type"] = lig_cons_split_lig.apply(lambda row: contact_type(row), axis = 1)
-
-        arpeggio_lig_cons_lig = lig_cons_split_lig.sort_values(by = ["Chain (Atom1)", "ResNum (Atom1)"])
-        arpeggio_lig_cons_lig = arpeggio_lig_cons_lig[["ResNum (Atom1)","Chain (Atom1)", 'ResName (Atom1)']] 
-        arpeggio_lig_cons_lig = arpeggio_lig_cons_lig.drop_duplicates(subset = ["ResNum (Atom1)", "Chain (Atom1)"])
-        arpeggio_lig_cons_lig = arpeggio_lig_cons_lig.rename(index = str, columns = {"ResNum (Atom1)": "PDB_ResNum", "Chain (Atom1)": "PDB_ChainID"}) 
-        arpeggio_lig_cons_lig = arpeggio_lig_cons_lig.astype({"PDB_ResNum": int})
-        
-        lig_cons_splits.append(lig_cons_split_lig)
-        arpeggio_lig_conss.append(arpeggio_lig_cons_lig)
-    
-    lig_cons_split = pd.concat(lig_cons_splits)
-    arpeggio_lig_cons = pd.concat(arpeggio_lig_conss)
-    
-    ########################### ADDED TO AVOID INCORRECT BS DEFINITION DUE TO PDB RESNUMS ###########################
-
-    struc_mapping = pd.read_csv(os.path.join(mappings_dir, "{}.mapping".format(struc_root)))
-
-    mapping_dict = {}
-    for chain, chain_df in struc_mapping.groupby("PDB_ChainID"):
-        for i, row in chain_df.iterrows():
-            mapping_dict[(chain, str(row["PDB_ResNum"]))] = row["UniProt_ResNum"]
-    
-    lig_cons_split['ResNum (Atom1)'] = lig_cons_split['ResNum (Atom1)'].astype(str)
-    arpeggio_lig_cons['PDB_ResNum'] = arpeggio_lig_cons['PDB_ResNum'].astype(str)
-    lig_cons_split["UniProt_Resnum"] = lig_cons_split.set_index(['Chain (Atom1)', 'ResNum (Atom1)']).index.map(mapping_dict.get)
-    arpeggio_lig_cons["UniProt_Resnum"] = arpeggio_lig_cons.set_index(['PDB_ChainID', 'PDB_ResNum']).index.map(mapping_dict.get)
-
-    ########################### ADDED TO AVOID INCORRECT BS DEFINITION DUE TO PDB RESNUMS ###########################
-
-    old_len1 = len(arpeggio_lig_cons)
-    old_len2 = len(lig_cons_split)
-    lig_cons_split = lig_cons_split[~lig_cons_split.UniProt_Resnum.isnull()]
-    arpeggio_lig_cons = arpeggio_lig_cons[~arpeggio_lig_cons.UniProt_Resnum.isnull()]
-    new_len1 = len(arpeggio_lig_cons)
-    new_len2 = len(lig_cons_split)
-    if new_len1 != old_len1:
-        log.warning("{} residues lacked mapping from PDB to UniProt at arpeggio_lig_cons for {}".format(new_len1 - old_len1, struc_root))
-    if new_len2 != old_len2:
-        log.warning("{} residues lacked mapping from PDB to UniProt at lig_cons_split for {}".format(new_len2 - old_len2, struc_root))
-
-    ########################### ADDED TO AVOID INCORRECT BS DEFINITION DUE TO LACKING MAPPING TO PDB RESNUMS ###########################
-
-    lig_cons_split.to_csv(os.path.join(arpeggio_dir,  "arpeggio_all_cons_split_{}.csv".format(struc_root)), index = False)
-    arpeggio_lig_cons.to_csv(os.path.join(arpeggio_dir,  "arpeggio_lig_cons_{}.csv".format(struc_root)), index = False)
-    
-    return lig_cons_split, arpeggio_lig_cons
-
-def reformat_arpeggio(arpeggio_df):
+def get_labs(fingerprints_dict):
     """
-    Starts formatting arpeggio table.
+    Returns all ligand labels from fingerprints dict.
     """
-    arpeggio_df.columns = [
-        'Atom_1', 'Atom_2', 'Clash', 'Covalent', 'VdW Clash', 'Vdw', 'Proximal', 'Hydrogen Bond',
-        'Weak Hydrogen Bond', 'Halogen bond',  'Ionic', 'Metal Complex', 'Aromatic', 'Hydrophobic',
-        'Carbonyl', 'Polar', 'Weak Polar', 'Atom proximity', 'Vdw proximity', 'Interacting entities'
-    ]
-    lig_cons = arpeggio_df.loc[arpeggio_df["Interacting entities"] == "INTER"] # Selecting only the interactions between our specified atoms (i.e ligands) and other selections
-    lig_cons = lig_cons.sort_values(by = ["Atom_1"])
-    
-    split_atom1 = lig_cons.Atom_1.str.split("/", expand = True) # splits atom1 column into three new columns: chain, resnum and atom
-    split_atom1.columns = ["Chain (Atom1)", "ResNum (Atom1)", "Atom (Atom1)"]
-    split_atom2 = lig_cons.Atom_2.str.split("/", expand = True)  # splits atom2 column into three new columns: chain, resnum and atom
-    split_atom2.columns = ["Chain (Atom2)", "ResNum (Atom2)", "Atom (Atom2)"]
-    
-    lig_cons_split = pd.merge(split_atom2, lig_cons, left_index = True, right_index = True) # Making a table of the contacts, but with the atom identifier split into chain, resnum, and atom
-    lig_cons_split = pd.merge(split_atom1, lig_cons_split, left_index = True, right_index = True) # Making a table of the contacts, but with the atom identifier split into chain, resnum, and atom
-    lig_cons_split = lig_cons_split.drop(axis = 1, labels = ["Atom_1", "Atom_2"])
-    lig_cons_split["ResNum (Atom1)"] = lig_cons_split["ResNum (Atom1)"].astype(int)
-    lig_cons_split["ResNum (Atom2)"] = lig_cons_split["ResNum (Atom2)"].astype(int)
-    return lig_cons_split
-
-def add_resnames_to_arpeggio_table(structure, clean_pdbs_dir, arpeggio_cons_split, struc_fmt = "mmcif"):
-    """
-    adds residue names to arpeggio table, needed for later table mergings
-    """
-    structure_root, _ = os.path.splitext(structure) 
-    structure_path = os.path.join(clean_pdbs_dir, "{}.clean.pdb".format(structure_root))
-    pdb_structure = PDBXreader(inputfile = structure_path).atoms(format_type = struc_fmt, excluded=())
-    resnames_dict = {(row.auth_asym_id, int(row.auth_seq_id)): row.label_comp_id for index, row in pdb_structure.drop_duplicates(['auth_asym_id', 'auth_seq_id']).iterrows()}
-    arpeggio_cons_split["ResName (Atom1)"] = arpeggio_cons_split.set_index(["Chain (Atom1)", "ResNum (Atom1)"]).index.map(resnames_dict.get)
-    arpeggio_cons_split["ResName (Atom2)"] = arpeggio_cons_split.set_index(["Chain (Atom2)", "ResNum (Atom2)"]).index.map(resnames_dict.get)
-    return arpeggio_cons_split
-
-def ligand_to_atom2(lig_cons_split, lig):
-    """
-    formats arpeggio table so that the ligand atoms are always Atom2
-    """
-    ordered_cols = [
-        'Chain (Atom1)', 'ResNum (Atom1)', 'ResName (Atom1)', 'Atom (Atom1)',
-        'Chain (Atom2)', 'ResNum (Atom2)', 'ResName (Atom2)', 'Atom (Atom2)',
-        'Clash', 'Covalent', 'VdW Clash', 'Vdw', 'Proximal', 'Hydrogen Bond',
-        'Weak Hydrogen Bond', 'Halogen bond', 'Ionic', 'Metal Complex', 'Aromatic',
-        'Hydrophobic', 'Carbonyl', 'Polar', 'Weak Polar','Atom proximity',
-        'Vdw proximity', 'Interacting entities'
-    ]
-    lig_is_atom1 = lig_cons_split[lig_cons_split["ResName (Atom1)"] == lig].sort_values("ResNum (Atom2)")
-    lig_is_atom2 = lig_cons_split[lig_cons_split["ResName (Atom2)"] == lig].sort_values("ResNum (Atom1)")
-
-    lig_is_atom1.rename(columns = {
-        'Chain (Atom1)': 'Chain (Atom2)', 'Chain (Atom2)': 'Chain (Atom1)',
-        'ResNum (Atom1)': 'ResNum (Atom2)', 'ResNum (Atom2)': 'ResNum (Atom1)',
-        'Atom (Atom1)': 'Atom (Atom2)', 'Atom (Atom2)': 'Atom (Atom1)',
-        'ResName (Atom1)': 'ResName (Atom2)', 'ResName (Atom2)': 'ResName (Atom1)'
-    }, inplace = True)
-
-    lig_cons_split_rf = pd.concat([lig_is_atom1[ordered_cols], lig_is_atom2[ordered_cols]]) # new dataframe so ligand is always atom2
-    lig_cons_split_rf = lig_cons_split_rf[lig_cons_split_rf["ResName (Atom1)"].isin(aas)]
-    return lig_cons_split_rf
-
-def contact_type(row):
-    """
-    determines whether a row is backbone or sidechain contact
-    """
-    if row["Atom (Atom1)"] in bbone:
-        return "backbone"
-    else:
-        return "sidechain"
+    return [k for k in fingerprints_dict.keys()]
 
 def generate_dictionary(mmcif_file):
     """
@@ -683,52 +563,6 @@ def determine_color(interactions):
 
 ### FUNCTIONS FOR SITE DEFINITION
 
-def generate_ligs_res_df(arpeggio_dir):
-    """
-    Given a directory containing processed Arpeggio output files,
-    returns a dataset containing information about the ligands of
-    interest binding the protein and their labels.
-    """
-    p = re.compile("""arpeggio_all_cons_split_(.+).csv""")
-    lig_files = sorted([file for file in os.listdir(arpeggio_dir) if file.startswith("arpeggio_all_cons_split")])
-    file_ids, ligs, resnums, chains, ligs_ress = [[], [], [], [], []]
-    for file in lig_files:
-        m = p.match(file)
-        if m:
-            file_id = m.group(1)
-        else:
-            log.critical("Failed getting file ID for {}".format(file))
-        #comps = file.split("_")
-        #file_id = "{}_{}".format(comps[-2], comps[-1].split(".")[0]) # CAREFUL WITH THIS ID
-        df = pd.read_csv(os.path.join(arpeggio_dir, file))
-        for lig, lig_df in df.groupby(["ResName (Atom2)", "ResNum (Atom2)", "Chain (Atom2)"]):
-            lig_ress = lig_df["UniProt_Resnum"].unique().tolist()
-            file_ids.append(file_id)
-            ligs.append(lig[0])
-            resnums.append(lig[1])
-            chains.append(lig[2])
-            ligs_ress.append(lig_ress)
-    lig_data_df = pd.DataFrame(list(zip(file_ids, ligs, resnums, chains, ligs_ress)), columns = ["pdb_id", "lig_name", "lig_resnum", "lig_chain", "binding_res"])
-    labs = [file_ids[i] + "_" + str(ligs[i]) + "_" + str(resnums[i]) + "_" + str(chains[i]) for i in range(len(ligs))]
-    lig_data_df["lab"] = labs
-    return lig_data_df
-
-def get_dis_file(lig_data_df, out):
-    """
-    Creates .dis file to be fed to OC.
-    """
-    lig_res = lig_data_df.binding_res.tolist() #this is a list of lists, each list contains residue numbers interacting with ligand
-    labs = lig_data_df.lab.tolist()
-    intersect_dict = get_intersect_rel_matrix(lig_res)
-    n_ligs = len(lig_res)
-    with open(out, "w+") as fh:
-        fh.write(str(n_ligs) + "\n")
-        for lab in labs: #labs contain unique identifier for a ligand
-            fh.write(lab + "\n")
-        for i in range(n_ligs):
-            for j in range(i+1, n_ligs):
-                fh.write(str(intersect_dict[i][j]) + "\n")
-
 def get_intersect_rel_matrix(binding_ress):
     """
     Given a set of ligand binding residues, calcualtes a
@@ -752,6 +586,84 @@ def intersection_rel(l1, l2):
     I_max = min([len1, len2])
     I = len(list(set(l1).intersection(l2)))
     return I/I_max
+
+def get_lig2chain_dict(simple_dir):
+    """
+    Returns a dictionary that maps ligands in ASYM unit to their chains.
+    """
+    simple_files = [f for f in os.listdir(simple_dir) if f.endswith(".pdb")] ### FIXME format
+    lig2chain_cif = {}
+    for simple_file in simple_files: 
+        pdb_id = os.path.splitext(simple_file)[0].split("_")[0]
+        struc_root = os.path.splitext(simple_file)[0]
+        simple_cif_file = os.path.join(simple_dir, simple_file)
+        cif_df = PDBXreader(inputfile = simple_cif_file).atoms(format_type = "mmcif", excluded=())
+        cif_df["struc_id"] = struc_root
+        ligs_df = cif_df.query(
+            'group_PDB == "HETATM"'
+        ).query(
+            'label_comp_id != "HOH"'
+        ).drop_duplicates(
+            ["label_comp_id", "auth_asym_id", "label_asym_id", "auth_seq_id"]
+        ).reset_index(
+            drop = True
+        )[["struc_id", "label_comp_id", "label_asym_id", "auth_asym_id", "auth_seq_id"]]
+
+        for _, row in ligs_df.iterrows():
+            nk = "{}_{}_{}_{}".format(row.struc_id, row.label_comp_id, row.auth_asym_id, row.auth_seq_id) # this has to be auth_asym_id to match with cluster_id_dict_new and ChimeraX. Changing to _FULL
+            lig2chain_cif[nk] = simple_file
+    return lig2chain_cif
+
+def write_chimeraX_attr(cluster_id_dict, trans_dir, attr_out): # cluster_id_dict is now the new one with orig_label_asym_id
+    """
+    Gets chimeraX atom specs, binding site ids, and paths
+    to pdb files to generate the attribute files later, and
+    eventually colour models. 
+    """
+    trans_files = [f for f in os.listdir(trans_dir) if f.endswith(".pdb")] ### FIXME format
+    order_dict = {k : i+1 for i, k in enumerate(trans_files)}
+    
+    defattr_lines = []
+
+    for k, v in cluster_id_dict.items():
+    #for k, v in lig2chain_cif.items():
+
+        ld = k.split("_") # stands for lig data
+
+        struc_id, lig_resname, lig_chain_id, lig_resnum  = ["_".join(ld[:-3]), ld[-3], ld[-2], ld[-1]] # this way, indexing from the end should cope with any struc_ids
+
+        if k in cluster_id_dict:
+            defattr_line = "\t#{}/{}:{}\t{}\n\n".format(order_dict[f'{struc_id}.pdb'], lig_chain_id, lig_resnum, v)
+        else:
+            defattr_line = "\t#{}/{}:{}\t{}\n\n".format(order_dict[f'{struc_id}.pdb'], lig_chain_id, lig_resnum, "-1")
+        defattr_lines.append(defattr_line)
+        
+    with open(attr_out, "w") as out:
+        out.write("attribute: binding_site\n\n")
+        out.write("match mode: 1-to-1\n\n")
+        out.write("recipient: residues\n\n")
+        for i in sorted(defattr_lines):
+            out.write(i)
+    return 
+
+def write_chimeraX_script(chimera_script_out, trans_dir, attr_out, chX_session_out, chimeraX_commands, cluster_ids):
+    """
+    Writes a chimeraX script to colour and format.
+    """
+    trans_files = [f for f in os.listdir(trans_dir) if f.endswith(".pdb")] ### FIXME format
+    with open(chimera_script_out, "w") as out:
+        out.write("# opening files\n\n")
+        for f in trans_files:
+            out.write("open {}\n\n".format(f))
+        out.write("# opening attribute file\n\n")
+        out.write("open {}\n\n".format(attr_out))
+        out.write("# colouring and formatting for visualisation\n\n")
+        for cmxcmd in chimeraX_commands:
+            out.write("{}\n\n".format(cmxcmd))
+        for cluster_id in cluster_ids:
+            out.write(f'col ::binding_site=={cluster_id} {bss_colors[cluster_id]};\n')
+        out.write("save {}\n\n".format(chX_session_out))
+    return
 
 def write_bs_files(frag_mean_coords, bs_def_out, attr_out, chimera_script_out):
     """
@@ -1420,167 +1332,243 @@ def main(args):
 
     ### ARPEGGIO PART ###
 
-    struc2ligs = {}
-    for struc in fnames:
-        struc_root, _ =  os.path.splitext(struc)
-        struc2ligs[struc] = []
-        struc_df = ligs_df.query('struc_name == @struc')
+    fps_out = os.path.join(results_dir, f'{input_id}_ligs_fingerprints.pkl') 
+    fps_status_out = os.path.join(results_dir, f'{input_id}_fps_status.pkl') #fps: will stand for fingerprints
 
-        pdb_path = os.path.join(supp_pdbs_dir, struc)
-        pdb_path_root, _ =  os.path.splitext(pdb_path)
+    if override or not os.path.isfile(fps_out) or not os.path.isfile(fps_status_out):
+            
+        struc2ligs = {}
+        lig_fps = {}
+        # no_mapping_pdbs = []
+        fp_status = {}
 
-        pdb_df = PDBXreader(pdb_path).atoms(format_type = struc_fmt, excluded=())
-        cif_out = os.path.join(supp_cifs_dir, "{}.cif".format(struc_root))
+        for struc in fnames:
+            struc_root, _ =  os.path.splitext(struc)
+            struc2ligs[struc] = []
+            struc_df = ligs_df.query('struc_name == @struc')
 
-        pdb_df["label_alt_id"] = "."
-        # cif_df["pdbx_PDB_ins_code"] = "?"
-        pdb_df["pdbx_formal_charge"] = "?"
+            pdb_path = os.path.join(supp_pdbs_dir, struc)
+            pdb_path_root, _ =  os.path.splitext(pdb_path)
 
-        cif_cols_order = [
-            "group_PDB", "id", "type_symbol", "label_atom_id", "label_alt_id", "label_comp_id", "label_asym_id",
-            # "label_entity_id",
-            "label_seq_id", "pdbx_PDB_ins_code", "Cartn_x", "Cartn_y", "Cartn_z", "occupancy",
-            "B_iso_or_equiv", "pdbx_formal_charge", "auth_seq_id", "auth_comp_id", "auth_asym_id", "auth_atom_id", "pdbx_PDB_model_num"
-        ]
-        w = PDBXwriter(outputfile = cif_out)
-        w.run(pdb_df[cif_cols_order], format_type = "mmcif")
-        
-        if struc_df.empty:
-            log.warning("No ligands in {}".format(struc))
-            continue
+            pdb_df = PDBXreader(pdb_path).atoms(format_type = struc_fmt, excluded=())
+            cif_out = os.path.join(supp_cifs_dir, "{}.cif".format(struc_root))
 
-        lig_sel = " ".join(["/{}/{}/".format(row.auth_asym_id, row.auth_seq_id) for _, row in  struc_df.iterrows()])
+            pdb_df["label_alt_id"] = "."
+            # cif_df["pdbx_PDB_ins_code"] = "?"
+            pdb_df["pdbx_formal_charge"] = "?"
 
-        ligand_names = list(set([row.label_comp_id for _, row in struc_df.iterrows()]))
-
-        arpeggio_default_json_name = os.path.basename(struc).split(".")[0]
-        arpeggio_default_out = os.path.join(arpeggio_dir, f"{arpeggio_default_json_name}.json")  # this is how arpeggio names the file (splits by "." and takes the first part)
-
-        arpeggio_out = os.path.join(arpeggio_dir, struc_root + ".json")
-        arpeggio_proc_df_out = os.path.join(arpeggio_dir, struc_root + "_proc.pkl")
-
-        if override or not os.path.isfile(arpeggio_proc_df_out):
-
-            if override or not os.path.isfile(arpeggio_out):
-
-                ec, cmd = run_arpeggio(cif_out, lig_sel, arpeggio_dir)
-                if ec != 0:
-                    log.error("Arpeggio failed for {} with {}".format(struc, cmd))
-                    continue
-
-                shutil.move(arpeggio_default_out, arpeggio_out)
-
-            arp_df = pd.read_json(arpeggio_out)
-
-            pdb2up = load_pickle(os.path.join(mappings_dir, "{}_mapping.pkl".format(struc_root)))
-
-            proc_inters, fp_stat = process_arpeggio_df(arp_df, struc_root, ligand_names, pdb2up)
-
-            coords_dict = generate_dictionary(cif_out)
-
-            proc_inters["coords_end"] = proc_inters.set_index(["auth_asym_id_end", "label_comp_id_end", "auth_seq_id_end", "auth_atom_id_end"]).index.map(coords_dict.get)
-            proc_inters["coords_bgn"] = proc_inters.set_index(["auth_asym_id_bgn", "label_comp_id_bgn", "auth_seq_id_bgn", "auth_atom_id_bgn"]).index.map(coords_dict.get)
-
-            proc_inters["width"] = proc_inters["contact"].apply(determine_width)
-            proc_inters["color"] = proc_inters["contact"].apply(determine_color)
-            proc_inters.to_pickle(arpeggio_proc_df_out)
-            log.debug("Arpeggio processed data saved")
-    else:
-        proc_inters = pd.read_pickle(arpeggio_proc_df_out)
-        log.debug("Loaded arpeggio processed data")
-
-    print("Finishing here!")
-    sys.exit(0)
-
-    ligand_contact_list = []
-    for struc in fnames:
-        struc_root, _ =  os.path.splitext(struc)
-        all_ligs = ligs_df.query('struc_name == @struc').label_comp_id.unique().tolist()
-        arpeggio_out1 = os.path.join(arpeggio_dir, "arpeggio_all_cons_split_{}.csv".format(struc_root)) # output file 1
-        arpeggio_out2 = os.path.join(arpeggio_dir,  "arpeggio_lig_cons_{}.csv".format(struc_root)) # output file 2
-        if os.path.isfile(arpeggio_out1) and os.path.isfile(arpeggio_out2):
-            lig_cons_split = pd.read_csv(arpeggio_out1)
-            arpeggio_lig_cons = pd.read_csv(arpeggio_out2)
-        else:
-            if len(all_ligs) == 0:
-                log.warning("No LOIs in {}".format(struc_root))
+            w = PDBXwriter(outputfile = cif_out)
+            w.run(pdb_df[cif_cols_order], format_type = "mmcif")
+            
+            if struc_df.empty:
+                fp_status[struc_root] = "No-Ligs"
+                log.warning("No ligands in {}".format(struc))
                 continue
-            else:
-                lig_cons_split, arpeggio_lig_cons = process_arpeggio(struc, all_ligs, clean_pdbs_dir, arpeggio_dir, mappings_dir) ### NOW PROCESSES ALL LIGANDS ###
-                log.debug("Arpeggio output processed for {}!".format(struc_root))
-        ligand_contact = arpeggio_lig_cons["PDB_ResNum"].astype(str)
-        ligand_contact_list.append(ligand_contact)
 
+            lig_sel = " ".join(["/{}/{}/".format(row.auth_asym_id, row.auth_seq_id) for _, row in  struc_df.iterrows()])
+
+            ligand_names = list(set([row.label_comp_id for _, row in struc_df.iterrows()]))
+
+            arpeggio_default_json_name = os.path.basename(struc).split(".")[0]
+            arpeggio_default_out = os.path.join(arpeggio_dir, f"{arpeggio_default_json_name}.json")  # this is how arpeggio names the file (splits by "." and takes the first part)
+
+            arpeggio_out = os.path.join(arpeggio_dir, struc_root + ".json")
+            arpeggio_proc_df_out = os.path.join(arpeggio_dir, struc_root + "_proc.pkl")
+
+            if override or not os.path.isfile(arpeggio_proc_df_out):
+
+                if override or not os.path.isfile(arpeggio_out):
+
+                    ec, cmd = run_arpeggio(cif_out, lig_sel, arpeggio_dir)
+                    if ec != 0:
+                        fp_status[struc_root] = "Arpeggio-Fail"
+                        log.error("Arpeggio failed for {} with {}".format(struc, cmd))
+                        continue
+
+                    shutil.move(arpeggio_default_out, arpeggio_out)
+
+                arp_df = pd.read_json(arpeggio_out)
+
+                pdb2up = load_pickle(os.path.join(mappings_dir, "{}_mapping.pkl".format(struc_root)))
+
+                proc_inters, fp_stat = process_arpeggio_df(arp_df, struc_root, ligand_names, pdb2up)
+
+                coords_dict = generate_dictionary(cif_out)
+
+                proc_inters["coords_end"] = proc_inters.set_index(["auth_asym_id_end", "label_comp_id_end", "auth_seq_id_end", "auth_atom_id_end"]).index.map(coords_dict.get)
+                proc_inters["coords_bgn"] = proc_inters.set_index(["auth_asym_id_bgn", "label_comp_id_bgn", "auth_seq_id_bgn", "auth_atom_id_bgn"]).index.map(coords_dict.get)
+
+                proc_inters["width"] = proc_inters["contact"].apply(determine_width)
+                proc_inters["color"] = proc_inters["contact"].apply(determine_color)
+                proc_inters.to_pickle(arpeggio_proc_df_out)
+
+                fp_status[struc_root] = fp_stat
+                log.debug("Arpeggio processed data saved")
+            else:
+                proc_inters = pd.read_pickle(arpeggio_proc_df_out)
+                log.debug("Loaded arpeggio processed data")
+
+            proc_inters_indexed = proc_inters.set_index(["label_comp_id_bgn", "auth_asym_id_bgn", "auth_seq_id_bgn"])
+
+            lig_fps_status = {}
+            for _, row in  struc_df.iterrows():
+                lig = (row.label_comp_id, row.auth_asym_id, row.auth_seq_id)
+                try:
+                    lig_rows = proc_inters_indexed.loc[[lig], :].copy()  # Happens for 7bf3 (all aa binding MG are artificial N-term), also for low-occuoancy ligands? e.g., 5srs, 5sq5
+
+                    if lig_rows.isnull().values.all(): # need all so works only when WHOLE row is Nan
+                        log.warning("No interactions for ligand {} in {}".format(lig, struc_root))
+                        lig_fps_status[lig] = "No-PLIs"
+                        continue
+
+                    ###### CHECK IF LIGAND FINGERPRINT IS EMPTY ######
+                    lig_rows.UniProt_ResNum_end = lig_rows.UniProt_ResNum_end.astype(int)
+                    lig_fp = lig_rows.UniProt_ResNum_end.unique().tolist()
+                    lig_key = "{}_".format(struc_root) + "_".join([str(l) for l in lig])
+                    lig_fps[lig_key] = lig_fp
+                except:
+                    log.warning("Empty fingerprint for ligand {} in {}".format(lig, struc_root))
+                    continue
+        dump_pickle(lig_fps, fps_out)
+        dump_pickle(fp_status, fps_status_out)
+    else:
+        lig_fps = pd.read_pickle(fps_out)
+        fp_status = pd.read_pickle(fps_status_out)
+        log.debug("Loaded fingerprints")
+    
     log.info("ARPEGGIO section completed")
 
-    ### BINDING SITE DEFINITION SECTION
+    ### BINDING SITE DEFINITION SECTION NEW
 
-    pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
+    lig_inters = get_inters(lig_fps)
+    lig_inters = [sorted(list(set(i))) for i in lig_inters] # making sure each residue is present only once (O00214 problematic with saccharides)
+    lig_labs = get_labs(lig_fps)
+    n_ligs = len(lig_labs)
+    log.info("There are {} relevant ligands for {}".format(str(n_ligs), input_id))
+    irel_mat_out = os.path.join(results_dir, f'{input_id}_irel_matrix.pkl')
 
-    ligs = ligs_df.label_comp_id.unique().tolist()
-    string_name = "{}_BS_def_{}_{}_{}".format(input_id, lig_clust_method, lig_clust_metric, lig_clust_dist)
-    bs_def_out = os.path.join(results_dir, "{}.pkl".format(string_name))
-    attr_out = os.path.join(results_dir, "{}.attr".format(string_name))
-    chimera_script_out = os.path.join(results_dir, "{}.com".format(string_name))
+    #### GENERATING IREL MATRIX
 
-    ## DEFINE SITES WITHOUT OC
-
-    # GET DISTANCE MATRIX
-
-    rel_dist_out = os.path.join(results_dir, "{}_rel_dist.pkl".format(input_id))
-    lig_inters_out = os.path.join(results_dir, "{}_lig_inters.pkl".format(input_id))
-    if override or not os.path.isfile(lig_inters_out):
-        lig_data_df = generate_ligs_res_df(arpeggio_dir)
-        lig_data_df.to_pickle(lig_inters_out)
-        log.info("Saved ligand interactions dataframe")
+    if override or not os.path.isfile(irel_mat_out):
+        irel_matrix = get_intersect_rel_matrix(lig_inters) # this is a measure of similarity, probs want to save this
+        dump_pickle(irel_matrix, irel_mat_out)
+        log.info("Calcualted intersection matrix")
     else:
-        lig_data_df = pd.read_pickle(lig_inters_out)
-        log.info("Loaded ligand interactions dataframe")
+        irel_matrix = load_pickle(irel_mat_out)
+        log.debug("Loaded intersection matrix")
 
-    if override or not os.path.isfile(rel_dist_out):
-        lig_res = lig_data_df.binding_res.tolist()
-        intersect_dict = get_intersect_rel_matrix(lig_res)
-        irel_df = pd.DataFrame(intersect_dict).round(3)
+    #### CLUSTERING LIGANDS
+
+    if n_ligs == 1:
+        cluster_ids = [0]
+    else:
+        irel_df = pd.DataFrame(irel_matrix)
         dist_df = 1 - irel_df # distance matrix in pd.Dataframe() format
-        dist_df.to_pickle(rel_dist_out) 
-        log.info("Saved relative distance matrix")
-    else:
-        dist_df = pd.read_pickle(rel_dist_out)
-        log.info("Loaded relative distance matrix")
-
-    if os.path.isfile(bs_def_out) and os.path.isfile(attr_out) and os.path.isfile(chimera_script_out):
-        lig_data_df = pd.read_pickle(bs_def_out)
-        log.debug("Loaded binding site definition")
-        pass
-    else:
-        labs = lig_data_df.lab.tolist()
         condensed_dist_mat = scipy.spatial.distance.squareform(dist_df) # condensed distance matrix to be used for clustering
         linkage = scipy.cluster.hierarchy.linkage(condensed_dist_mat, method = lig_clust_method, optimal_ordering = True)
         cut_tree = scipy.cluster.hierarchy.cut_tree(linkage, height = lig_clust_dist)
         cluster_ids = [int(cut) for cut in cut_tree]
-        cluster_id_dict = {labs[i]: cluster_ids[i] for i in range(len(labs))} #dictionary indicating membership for each lig
+    
+    cluster_id_dict = {lig_labs[i]: cluster_ids[i] for i in range(len(lig_labs))} #dictionary indicating membership for each lig
+            
+    log.info(f'Ligand clustering realised for {input_id}')
 
-        pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
-        lig_data_df["binding_site"] = lig_data_df.lab.map(cluster_id_dict)
-        #pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_paths}
-        pdb_files_dict = {}
-        for f in pdb_paths:
-            file_name = os.path.basename(f)
-            file_root, _ = os.path.splitext(os.path.splitext(file_name)[0])
-            if file_root not in pdb_files_dict.keys():
-                pdb_files_dict[file_root] = file_name
+    print(cluster_id_dict)
+
+    # lig2chain_out = os.path.join(results_dir, f'{input_id}_{lig_clust_method}_{lig_clust_dist}.lig2chain.pkl')
+    # if override or not os.path.isfile(lig2chain_out):
+    #     lig2chain_cif = get_lig2chain_dict(simple_pdbs_dir)
+    #     dump_pickle(lig2chain_cif, lig2chain_out)
+    #     log.info("Ligand to chain mapping dictionary generated")
+    # else:
+    #     lig2chain_cif = load_pickle(lig2chain_out)
+    #     log.debug("Ligand to chain mapping dictionary loaded")
+
+    #### GENERATING CHIMERAX FILES
+
+    attr_out = os.path.join(simple_pdbs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.defattr')
+    chimera_script_out = os.path.join(simple_pdbs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.cxc')
+    chX_session_out = os.path.join(simple_pdbs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.cxs')
+
+    if override or not os.path.isfile(attr_out):
+                
+        order_dict = write_chimeraX_attr(cluster_id_dict, simple_pdbs_dir, attr_out) # this actually needs to be simplified PDBs, not transformed ones ???
+
+    if override or not os.path.isfile(chimera_script_out) or not os.path.isfile(chX_session_out):
+
+        write_chimeraX_script(chimera_script_out, simple_pdbs_dir, os.path.basename(attr_out), os.path.basename(chX_session_out), chimeraX_commands, cluster_ids) # this actually needs to be simplified PDBs, not transformed ones ???
+
+    log.info(f'Chimera attributes and script generated for {input_id}')   
+
+    print("Finishing here!")
+    sys.exit(0)
+
+    ### BINDING SITE DEFINITION SECTION OOOOOOOOLD
+
+    # pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
+
+    # ligs = ligs_df.label_comp_id.unique().tolist()
+    # string_name = "{}_BS_def_{}_{}_{}".format(input_id, lig_clust_method, lig_clust_metric, lig_clust_dist)
+    # bs_def_out = os.path.join(results_dir, "{}.pkl".format(string_name))
+    # attr_out = os.path.join(results_dir, "{}.attr".format(string_name))
+    # chimera_script_out = os.path.join(results_dir, "{}.com".format(string_name))
+
+    # # GET DISTANCE MATRIX
+
+    # rel_dist_out = os.path.join(results_dir, "{}_rel_dist.pkl".format(input_id))
+    # lig_inters_out = os.path.join(results_dir, "{}_lig_inters.pkl".format(input_id))
+    # if override or not os.path.isfile(lig_inters_out):
+    #     lig_data_df = generate_ligs_res_df(arpeggio_dir)
+    #     lig_data_df.to_pickle(lig_inters_out)
+    #     log.info("Saved ligand interactions dataframe")
+    # else:
+    #     lig_data_df = pd.read_pickle(lig_inters_out)
+    #     log.info("Loaded ligand interactions dataframe")
+
+    # if override or not os.path.isfile(rel_dist_out):
+    #     lig_res = lig_data_df.binding_res.tolist()
+    #     intersect_dict = get_intersect_rel_matrix(lig_res)
+    #     irel_df = pd.DataFrame(intersect_dict).round(3)
+    #     dist_df = 1 - irel_df # distance matrix in pd.Dataframe() format
+    #     dist_df.to_pickle(rel_dist_out) 
+    #     log.info("Saved relative distance matrix")
+    # else:
+    #     dist_df = pd.read_pickle(rel_dist_out)
+    #     log.info("Loaded relative distance matrix")
+
+    # if os.path.isfile(bs_def_out) and os.path.isfile(attr_out) and os.path.isfile(chimera_script_out):
+    #     lig_data_df = pd.read_pickle(bs_def_out)
+    #     log.debug("Loaded binding site definition")
+    #     pass
+    # else:
+    #     labs = lig_data_df.lab.tolist()
+    #     condensed_dist_mat = scipy.spatial.distance.squareform(dist_df) # condensed distance matrix to be used for clustering
+    #     linkage = scipy.cluster.hierarchy.linkage(condensed_dist_mat, method = lig_clust_method, optimal_ordering = True)
+    #     cut_tree = scipy.cluster.hierarchy.cut_tree(linkage, height = lig_clust_dist)
+    #     cluster_ids = [int(cut) for cut in cut_tree]
+    #     cluster_id_dict = {labs[i]: cluster_ids[i] for i in range(len(labs))} #dictionary indicating membership for each lig
+
+    #     pdb_paths = [os.path.join(clean_pdbs_dir, file) for file in os.listdir(clean_pdbs_dir)]
+    #     lig_data_df["binding_site"] = lig_data_df.lab.map(cluster_id_dict)
+    #     #pdb_files_dict = {f.split("/")[-1].split(".")[0]: f.split("/")[-1] for f in pdb_paths}
+    #     pdb_files_dict = {}
+    #     for f in pdb_paths:
+    #         file_name = os.path.basename(f)
+    #         file_root, _ = os.path.splitext(os.path.splitext(file_name)[0])
+    #         if file_root not in pdb_files_dict.keys():
+    #             pdb_files_dict[file_root] = file_name
         
-        print(pdb_files_dict)
+    #     print(pdb_files_dict)
 
-        lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
+    #     lig_data_df["pdb_path"] = lig_data_df.pdb_id.map(pdb_files_dict)
 
-        #print(pdb_files_dict)
+    #     #print(pdb_files_dict)
 
-        #print(lig_data_df.head())
+    #     #print(lig_data_df.head())
 
-        write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
+    #     write_bs_files(lig_data_df, bs_def_out, attr_out, chimera_script_out)
 
-        log.info("Binding site were defined")
+    #     log.info("Binding site were defined")
 
     log.info("Binding site definition completed")
 
