@@ -439,12 +439,13 @@ def map_values(row, pdb2up):
         log.debug(f'Residue {row.auth_seq_id_end} chain {row.auth_asym_id_end} has no mapping to UniProt')
         return np.nan # if there is no mapping, return NaN
 
-def create_resnum_mapping_dict(df):
+def create_resnum_mapping_dicts(df):
     """
     Creates a dictionary with the mapping between PDB_ResNum and UniProt_ResNum
     froma  previously created dataframe.
     """
-    chain_mapping = {}
+    pdb2up = {}
+    up2pdb = {}
     
     # Iterate over the dataframe
     for index, row in df.iterrows():
@@ -453,13 +454,16 @@ def create_resnum_mapping_dict(df):
         uniprot_resnum = row['UniProt_ResNum']
         
         # Initialize dictionary for the chain ID if it doesn't exist
-        if chain_id not in chain_mapping:
-            chain_mapping[chain_id] = {}
+        if chain_id not in pdb2up:
+            pdb2up[chain_id] = {}
+        if chain_id not in up2pdb:
+            up2pdb[chain_id] = {}
         
         # Add PDB_ResNum as key and UniProt_ResNum as value for the current chain
-        chain_mapping[chain_id][str(pdb_resnum)] = uniprot_resnum
+        pdb2up[chain_id][str(pdb_resnum)] = uniprot_resnum
+        up2pdb[chain_id][uniprot_resnum] = str(pdb_resnum)
     
-    return chain_mapping
+    return pdb2up, up2pdb
 
 def process_arpeggio_df(arp_df, pdb_id, ligand_names, pdb2up):
     """
@@ -1254,15 +1258,17 @@ def main(args):
     for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
         struc_root, _ =  os.path.splitext(struc)
         struc_mapping_path = os.path.join(mappings_dir, "{}_mapping.csv".format(struc_root))
-        struc_mapping_dict_path = os.path.join(mappings_dir, "{}_mapping.pkl".format(struc_root))
+        pdb2up_mapping_dict_path = os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_root))
+        up2pdb_mapping_dict_path = os.path.join(mappings_dir, "{}_up2pdb.pkl".format(struc_root))
         if OVERRIDE or not os.path.isfile(struc_mapping_path):
             mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, mappings_dir, swissprot, struc_fmt = struc_fmt) # giving supp, here, instead of simple because we want them all
-            mapping_dict = create_resnum_mapping_dict(mapping)
-            dump_pickle(mapping_dict, struc_mapping_dict_path)
+            mapping_dict, up2pdb = create_resnum_mapping_dicts(mapping)
+            dump_pickle(mapping_dict, pdb2up_mapping_dict_path)
+            dump_pickle(up2pdb, up2pdb_mapping_dict_path)
             log.info("Mapping files for {} generated".format(struc_root))
         else:
             mapping = pd.read_csv(struc_mapping_path)
-            mapping_dict = load_pickle(struc_mapping_dict_path)
+            mapping_dict = load_pickle(pdb2up_mapping_dict_path)
             log.debug("Mapping files for {} already exists".format(struc_root))
 
     log.info("UniProt mapping section completed")
@@ -1494,9 +1500,6 @@ def main(args):
         bs_ress_membership_dict = load_pickle(bs_mm_dict_out)
         log.debug("Loaded residue membership")
 
-    print("Finishing here!")
-    sys.exit(0)
-
     ### DSSP DATA ANALYSIS
     dsspd_filt = mapped_dssp_df.query('UniProt_ResNum == UniProt_ResNum and PDB_ResName != "X" and RSA == RSA').copy()
     dsspd_filt.SS = dsspd_filt.SS.fillna("C")
@@ -1545,7 +1548,7 @@ def main(args):
 
     if OVERRIDE or not os.path.isfile(rsa_profs_out):
         rsa_profiles = {}
-        for k, v in site_ress_dict.items():
+        for k, v in cluster_ress.items():
             rsa_profiles[k] = []
             for v2 in v:
                 if v2 in ress_RSA_dict:
@@ -1560,7 +1563,7 @@ def main(args):
     
     if OVERRIDE or not os.path.isfile(ss_profs_out):
         ss_profiles = {}
-        for k, v in site_ress_dict.items():
+        for k, v in cluster_ress.items():
             ss_profiles[k] = []
             for v2 in v:
                 if v2 in ress_SS_dict:
@@ -1575,7 +1578,7 @@ def main(args):
 
     if OVERRIDE or not os.path.isfile(aa_profs_out):
         aa_profiles = {}
-        for k, v in site_ress_dict.items():
+        for k, v in cluster_ress.items():
             aa_profiles[k] = []
             for v2 in v:
                 if v2 in ress_AA_dict:
@@ -1590,11 +1593,14 @@ def main(args):
 
     log.info("DSSP analysis completed")
 
+    # print("Finishing here!")
+    # sys.exit(0)
+
     ### VARIATION SECTION
 
-    if run_variants:
+    if run_variants: 
 
-        example_struc = os.path.join(clean_pdbs_dir, os.listdir(clean_pdbs_dir)[0])
+        example_struc = os.path.join(supp_cifs_dir, sorted([f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")])[0]) # first structure in the list, which is one with protein atoms on simple.
         fasta_path = os.path.join(varalign_dir, "{}.fa".format(input_id))
         fasta_root, _ = os.path.splitext(fasta_path)    
         hits_aln = "{}.sto".format(fasta_root)  
@@ -1603,7 +1609,7 @@ def main(args):
         shenkin_filt_out = os.path.join(varalign_dir, "{}_shenkin_filt.csv".format(input_id))
 
         if OVERRIDE_variants or not os.path.isfile(hits_aln_rf):
-            create_alignment_from_struc(example_struc, fasta_path)
+            create_alignment_from_struc(example_struc, fasta_path,  struc_fmt = "mmcif", n_it = JACKHMMER_n_it, seqdb = swissprot_path) # mmcif for supp cifs as need to be transofrmed for Arpeggio
             log.info("Saved MSA to file")
             pass
         else:
@@ -1611,7 +1617,7 @@ def main(args):
 
         ### CONSERVATION ANALYSIS
 
-        prot_cols = prot_cols = get_target_prot_cols(hits_aln)
+        prot_cols = get_target_prot_cols(hits_aln)
         
         shenkin_out = os.path.join(varalign_dir, "{}_rf_shenkin.pkl".format(input_id))
         if OVERRIDE_variants or not os.path.isfile(shenkin_out):
@@ -1752,7 +1758,7 @@ def main(args):
             log.warning("No DSSP data available")
             pass
 
-        mapped_data["binding_sites"] = mapped_data.UniProt_ResNum.map(ress_bss_dict)
+        mapped_data["binding_sites"] = mapped_data.UniProt_ResNum.map(bs_ress_membership_dict)
         mapped_data.to_pickle(final_table_out)
         log.info("Saved final table")
     else:
