@@ -9,6 +9,7 @@ import scipy
 import pickle
 import shutil
 import logging
+import requests
 import argparse
 import Bio.SeqIO
 import importlib
@@ -144,6 +145,8 @@ interaction_to_color = { # following Arpeggio's colour scheme
 
 bss_colors = load_pickle("./sample_colors_hex.pkl") # sample colors
 
+headings = ["ID", "RSA", "DS", "MES", "Size", "Cluster", "FS"]
+
 wd = os.getcwd()
 
 ### CONFIG FILE READING AND VARIABLE SAVING
@@ -194,6 +197,43 @@ def setup_dirs(dirs):
             continue
         else:
             os.mkdir(dirr)
+
+## UNIPROT NAMES FUNCTION
+
+def get_uniprot_info(uniprot_id):
+    """
+    Fetches UniProt ID, UniProt entry, and protein name for the given UniProt ID.
+    
+    Parameters:
+    uniprot_id (str): UniProt ID to fetch the information for.
+    
+    Returns:
+    dict: A dictionary with UniProt ID, UniProt entry, and protein name.
+    """
+    url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Extract UniProt ID, entry name, and protein name
+        uniprot_id = data.get('primaryAccession', 'N/A')
+        uniprot_entry = data.get('uniProtkbId', 'N/A')
+        protein_name = data.get('proteinDescription', {}).get('recommendedName', {}).get('fullName', {}).get('value', 'N/A')
+        
+        return {
+            'up_id': uniprot_id,
+            'up_entry': uniprot_entry,
+            'prot_name': protein_name
+        }
+    
+    # except requests.exceptions.HTTPError as http_err:
+    #     print(f"HTTP error occurred: {http_err}")
+    # except Exception as err:
+    #     print(f"An error occurred: {err}")
+    except:
+        return {"up_id": uniprot_id, "up_entry": "", "prot_name": ""}
 
 ## STAMPING FUNCTIONS
 
@@ -456,12 +496,12 @@ def create_resnum_mapping_dicts(df):
         # Initialize dictionary for the chain ID if it doesn't exist
         if chain_id not in pdb2up:
             pdb2up[chain_id] = {}
-        if chain_id not in up2pdb:
-            up2pdb[chain_id] = {}
+        if uniprot_resnum not in up2pdb:
+            up2pdb[uniprot_resnum] = []
         
         # Add PDB_ResNum as key and UniProt_ResNum as value for the current chain
         pdb2up[chain_id][str(pdb_resnum)] = uniprot_resnum
-        up2pdb[chain_id][uniprot_resnum] = str(pdb_resnum)
+        up2pdb[uniprot_resnum].append((chain_id, str(pdb_resnum)))
     
     return pdb2up, up2pdb
 
@@ -1068,6 +1108,42 @@ def merge_shenkin_df_and_mapping(shenkin_df, mapping_df, aln_ids):
     ).drop("MSA_column", axis = 1)
     return mapped_data
 
+def get_bss_table(results_df, job_id):
+    all_bs_ress = results_df.query('binding_sites == binding_sites').reset_index(drop=True)
+    all_bs_ress = all_bs_ress.explode("binding_sites")
+    all_bs_ress["bs_id"] = all_bs_ress.job_id + "." + all_bs_ress.binding_sites.astype(str)
+    all_bs_ress.UniProt_ResNum = all_bs_ress.UniProt_ResNum.astype(int)
+    all_bs_ress["RSA"].values[all_bs_ress["RSA"].values > 100] = 100
+
+    
+    site_ids, site_rsas, site_shenks, site_mess, site_sizes = [[], [], [], [], []]
+    for bs_id, bs_rows in all_bs_ress.groupby("bs_id"):            
+        no_rsa = len(bs_rows.query('RSA != RSA'))
+        no_shenk = len(bs_rows.query('abs_norm_shenkin != abs_norm_shenkin'))
+        no_mes = len(bs_rows.query('oddsratio != oddsratio'))
+
+        bs_rows = bs_rows.drop_duplicates(["binding_sites", "UniProt_ResNum"]) # drop duplicate residues within the binding site
+        site_rsa = round(bs_rows.query('RSA == RSA').RSA.mean(),1)
+        site_shenk = round(bs_rows.query('abs_norm_shenkin == abs_norm_shenkin').abs_norm_shenkin.mean(),1)
+        site_mes = round(bs_rows.query('oddsratio == oddsratio').oddsratio.mean(),2)
+        site_size = len(bs_rows)
+
+        site_ids.append(bs_id.split(".")[-1])
+        site_rsas.append(site_rsa)
+        site_shenks.append(site_shenk)
+        site_mess.append(site_mes)
+        site_sizes.append(site_size)
+
+    bss_data = pd.DataFrame(
+        list(zip(site_ids, site_rsas, site_shenks, site_mess, site_sizes)),
+        columns = ["lab", "RSA", "an_shenk", "MES", "n_ress"]
+    )
+
+    bss_data["Cluster"] = -1 # placeholder for cluster label (need to replace)
+    bss_data["FS"] = -1 # placeholder for functional score (need to replace)
+
+    return all_bs_ress, bss_data
+
 ### SETTING UP LOG
 
 logging.basicConfig(filename = "fragsys_REVAMPED.log", format = '%(asctime)s %(name)s [%(levelname)-8s] - %(message)s', level = logging.INFO)
@@ -1135,6 +1211,16 @@ def main(args):
         strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb") and "clean" not in f]
     n_strucs = len(strucs)
     log.info("Number of structures: {}".format(n_strucs))
+
+    ### EXTRACTING UNIPROT PROTEIN ACCESSION, ENTRY AND NAME
+
+    uniprot_info_out = os.path.join(results_dir, "{}_uniprot_info.pkl".format(input_id))
+    if OVERRIDE or not os.path.isfile(uniprot_info_out):
+        prot_info = info = get_uniprot_info(uniprot_id)
+        dump_pickle(prot_info, uniprot_info_out)
+        log.info("Obtained UniProt protein names")
+    else:
+        pass
 
     ### CLEANING FILES
 
@@ -1368,7 +1454,7 @@ def main(args):
 
                 arp_df = pd.read_json(arpeggio_out)
 
-                pdb2up = load_pickle(os.path.join(mappings_dir, "{}_mapping.pkl".format(struc_root)))
+                pdb2up = load_pickle(os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_root)))
 
                 proc_inters, fp_stat = process_arpeggio_df(arp_df, struc_root, ligand_names, pdb2up)
 
@@ -1765,6 +1851,21 @@ def main(args):
         log.info("Not running variants")
 
     log.info("Variants section completed")
+
+    ### generate binding site summary table
+
+    bss_table_out = os.path.join(results_dir, "{}_bss_table.pkl".format(input_id))
+
+    if OVERRIDE or not os.path.isfile(bss_table_out):
+        mapped_data["job_id"] = input_id
+        _, bss_data = get_bss_table(mapped_data, input_id)
+        bss_data = bss_data.fillna("NaN") # pre-processing could also be done before saving the pickle
+        bss_data.columns = headings # changing table column names
+        bss_data["ID"] = bss_data["ID"].astype(int) # converting ID to int
+        bss_data.to_pickle(bss_table_out)
+        log.info("Saved binding site summary table")
+    else:
+        pass
 
     log.info("THE END")
 
