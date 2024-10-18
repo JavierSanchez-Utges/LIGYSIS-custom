@@ -246,7 +246,9 @@ def generate_STAMP_domains(pdbs_dir, domains_out, roi = stamp_ROI):
         for pdb in pdb_files:
             pdb_root, pdb_ext = os.path.splitext(pdb)
             if pdb_ext == ".pdb":
-                fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_root + "_" + roi, roi))
+                pdb_name = pdb_root.split(".")[0]
+                # fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_root + "." + roi, roi))
+                fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_name + ".supp", roi))
 
 def stamp(domains, prefix, out):
     """
@@ -327,16 +329,16 @@ def simplify_pdb(supp_file, simple_file, struc_fmt = "mmcif"):
 
 ## LIGAND FUNCTIONS
 
-def get_lig_data(supp_pdbs_dir, ligs_df_path, struc_fmt = "mmcif"):
+def get_lig_data(cifs_dir, ligs_df_path, struc_fmt = "mmcif"):
     """
     From a directory containing a set of structurally superimposed pdbs,
     writes a .pkl file indicating the name, chain and residue number of the
-    ligand(s) of interest in every pdb.
+    ligand(s) of interest in every cif.
     """
     ligs_df = pd.DataFrame([])
-    supp_pdb_files = [file for file in os.listdir(supp_pdbs_dir) if file.endswith(".pdb")]
-    for struc in supp_pdb_files:
-        struc_path = os.path.join(supp_pdbs_dir, struc)
+    simple_cif_files = [file for file in os.listdir(cifs_dir) if file.endswith(".cif")]
+    for struc in simple_cif_files:
+        struc_path = os.path.join(cifs_dir, struc)
         df = PDBXreader(inputfile = struc_path).atoms(format_type = struc_fmt, excluded=())
         hetatm_df = df.query('group_PDB == "HETATM"')
         ligs = hetatm_df.label_comp_id.unique().tolist()
@@ -631,40 +633,13 @@ def intersection_rel(l1, l2):
     I = len(list(set(l1).intersection(l2)))
     return I/I_max
 
-def get_lig2chain_dict(simple_dir):
-    """
-    Returns a dictionary that maps ligands in ASYM unit to their chains.
-    """
-    simple_files = [f for f in os.listdir(simple_dir) if f.endswith(".pdb")] ### FIXME format
-    lig2chain_cif = {}
-    for simple_file in simple_files: 
-        pdb_id = os.path.splitext(simple_file)[0].split("_")[0]
-        struc_root = os.path.splitext(simple_file)[0]
-        simple_cif_file = os.path.join(simple_dir, simple_file)
-        cif_df = PDBXreader(inputfile = simple_cif_file).atoms(format_type = "mmcif", excluded=())
-        cif_df["struc_id"] = struc_root
-        ligs_df = cif_df.query(
-            'group_PDB == "HETATM"'
-        ).query(
-            'label_comp_id != "HOH"'
-        ).drop_duplicates(
-            ["label_comp_id", "auth_asym_id", "label_asym_id", "auth_seq_id"]
-        ).reset_index(
-            drop = True
-        )[["struc_id", "label_comp_id", "label_asym_id", "auth_asym_id", "auth_seq_id"]]
-
-        for _, row in ligs_df.iterrows():
-            nk = "{}_{}_{}_{}".format(row.struc_id, row.label_comp_id, row.auth_asym_id, row.auth_seq_id) # this has to be auth_asym_id to match with cluster_id_dict_new and ChimeraX. Changing to _FULL
-            lig2chain_cif[nk] = simple_file
-    return lig2chain_cif
-
 def write_chimeraX_attr(cluster_id_dict, trans_dir, attr_out): # cluster_id_dict is now the new one with orig_label_asym_id
     """
     Gets chimeraX atom specs, binding site ids, and paths
     to pdb files to generate the attribute files later, and
     eventually colour models. 
     """
-    trans_files = [f for f in os.listdir(trans_dir) if f.endswith(".pdb")] ### FIXME format
+    trans_files = [f for f in os.listdir(trans_dir) if f.endswith(".cif")] ### FIXME format
     order_dict = {k : i+1 for i, k in enumerate(trans_files)}
     
     defattr_lines = []
@@ -677,9 +652,9 @@ def write_chimeraX_attr(cluster_id_dict, trans_dir, attr_out): # cluster_id_dict
         struc_id, lig_resname, lig_chain_id, lig_resnum  = ["_".join(ld[:-3]), ld[-3], ld[-2], ld[-1]] # this way, indexing from the end should cope with any struc_ids
 
         if k in cluster_id_dict:
-            defattr_line = "\t#{}/{}:{}\t{}\n\n".format(order_dict[f'{struc_id}.pdb'], lig_chain_id, lig_resnum, v)
+            defattr_line = "\t#{}/{}:{}\t{}\n\n".format(order_dict[f'{struc_id}.simp.cif'], lig_chain_id, lig_resnum, v)
         else:
-            defattr_line = "\t#{}/{}:{}\t{}\n\n".format(order_dict[f'{struc_id}.pdb'], lig_chain_id, lig_resnum, "-1")
+            defattr_line = "\t#{}/{}:{}\t{}\n\n".format(order_dict[f'{struc_id}.simp.cif'], lig_chain_id, lig_resnum, "-1")
         defattr_lines.append(defattr_line)
         
     with open(attr_out, "w") as out:
@@ -694,7 +669,7 @@ def write_chimeraX_script(chimera_script_out, trans_dir, attr_out, chX_session_o
     """
     Writes a chimeraX script to colour and format.
     """
-    trans_files = [f for f in os.listdir(trans_dir) if f.endswith(".pdb")] ### FIXME format
+    trans_files = [f for f in os.listdir(trans_dir) if f.endswith(".cif")] ### FIXME format
     with open(chimera_script_out, "w") as out:
         out.write("# opening files\n\n")
         for f in trans_files:
@@ -1176,10 +1151,13 @@ def main(args):
     input_id = os.path.normpath(input_dir).split(os.sep)[-1]
     output_dir = os.path.join(wd, "output", input_id)
     results_dir = os.path.join(output_dir, "results")
+    raw_pdbs_dir = os.path.join(output_dir, "raw_pdbs")
+    raw_cifs_dir = os.path.join(output_dir, "raw_cifs")
     stamp_out_dir = os.path.join(output_dir, "stamp_out")
     supp_pdbs_dir = os.path.join(output_dir, "supp_pdbs")
     supp_cifs_dir = os.path.join(output_dir, "supp_cifs")
     simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
+    simple_cifs_dir = os.path.join(output_dir, "simple_cifs")
     clean_pdbs_dir = os.path.join(output_dir, "clean_pdbs")
     pdb_clean_dir = os.path.join(output_dir, "pdb_clean")
     mappings_dir = os.path.join(output_dir, "mappings")
@@ -1188,10 +1166,13 @@ def main(args):
     varalign_dir = os.path.join(output_dir, "varalign")
     
     dirs = [
-        output_dir, results_dir, stamp_out_dir,
-        supp_pdbs_dir, simple_pdbs_dir, clean_pdbs_dir,
+        output_dir, results_dir,
+        raw_pdbs_dir, raw_cifs_dir,
+        clean_pdbs_dir, stamp_out_dir,
+        supp_pdbs_dir, supp_cifs_dir,
+        simple_pdbs_dir, simple_cifs_dir,
         pdb_clean_dir, mappings_dir, dssp_dir,
-        arpeggio_dir, varalign_dir, supp_cifs_dir,
+        arpeggio_dir, varalign_dir,
     ]
     
     setup_dirs(dirs) # creates directory /output/input_dir_name and then all results subdirectories: results, stamp_out, clean_pdbs, etc...
@@ -1205,12 +1186,6 @@ def main(args):
         log.info("Final results table already exists")
         log.info("Skipping to the end")
         sys.exit(0)
-    if struc_fmt == "mmcif":
-        strucs = [f for f in os.listdir(input_dir) if f.endswith(".cif") and "clean" not in f] # different extension depending on structure format
-    elif struc_fmt == "pdb":
-        strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb") and "clean" not in f]
-    n_strucs = len(strucs)
-    log.info("Number of structures: {}".format(n_strucs))
 
     ### EXTRACTING UNIPROT PROTEIN ACCESSION, ENTRY AND NAME
 
@@ -1222,14 +1197,50 @@ def main(args):
     else:
         pass
 
+    ### GETTING STRUCTURES
+
+    if struc_fmt == "mmcif":
+        strucs = [f for f in os.listdir(input_dir) if f.endswith(".cif")] # different extension depending on structure format
+    elif struc_fmt == "pdb":
+        strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb")]
+    n_strucs = len(strucs)
+    log.info("Number of structures: {}".format(n_strucs))
+
+    ### If input format is mmcif, we need to convert to pdb since clean_pdb.py only works with pdb files
+
+    if struc_fmt == "mmcif":
+        for struc in strucs:
+            struc_root, struc_ext = os.path.splitext(struc)
+            input_cif_path = os.path.join(input_dir, struc)
+            # copy all structures to raw_cifs_dir and then transform format to .pdb and save to raw_pdbs_dir
+            shutil.copy(input_cif_path, raw_cifs_dir)
+
+            cif_df = PDBXreader(input_cif_path).atoms(format_type = struc_fmt, excluded=())
+            pdb_out = os.path.join(raw_pdbs_dir, "{}.pdb".format(struc_root))
+
+            # cif_df["label_alt_id"] = "."
+            # cif_df["pdbx_PDB_ins_code"] = "?"
+            # cif_df["pdbx_formal_charge"] = "?"
+
+            w = PDBXwriter(outputfile = pdb_out)
+            w.run(cif_df, format_type = "pdb")
+            log.info("Converted {} to pdb".format(struc))
+    else:
+        for struc in strucs:
+            struc_root, struc_ext = os.path.splitext(struc)
+            input_pdb_path = os.path.join(input_dir, struc)
+            shutil.copy(input_pdb_path, raw_pdbs_dir)
+            log.info("Copied {} to raw_pdbs_dir".format(struc))
+
+
     ### CLEANING FILES
 
-    ## if structure format is mmcif, we need to convert to pdb since clean_pdb.py only works with pdb files
+    pdb_strucs = [f for f in os.listdir(raw_pdbs_dir) if f.endswith(".pdb") and "clean" not in f]
 
-    for struc in strucs:
+    for struc in pdb_strucs:
         struc_root, struc_ext = os.path.splitext(struc)  # "structure_name", ".pdb"
-        pdb_path = os.path.join(input_dir, struc)        # /input_dir/structure_name.pdb
-        pdb_path_root, _ =  os.path.splitext(pdb_path)   # /input_dir/structure_name
+        pdb_path = os.path.join(raw_pdbs_dir, struc)        # /output_dir/raw_pdbs/structure_name.pdb
+        pdb_path_root, _ =  os.path.splitext(pdb_path)   # /output_dir/raw_pdbs/structure_name
         clean_struc_path_from = f'{pdb_path_root}.clean{struc_ext}' # /input_dir/structure_name.clean.pdb
         clean_struc_path_to = os.path.join(clean_pdbs_dir, f'{struc_root}.clean{struc_ext}') # /output_dir/clean_pdbs/structure_name.clean.pdb
         if os.path.isfile(clean_struc_path_to): # if clean file already exists in clean files dir
@@ -1242,7 +1253,7 @@ def main(args):
                 if os.path.isfile(clean_struc_path_from): 
                     shutil.move(clean_struc_path_from, clean_struc_path_to) # move clean file to clean files dir
                 for pdb_clean_suff in pdb_clean_suffixes: # for each suffix in pdb_clean_suffixes
-                    pdb_clean_file_from = os.path.join(input_dir, "{}.{}".format(struc, pdb_clean_suff))
+                    pdb_clean_file_from = os.path.join(raw_pdbs_dir, "{}.{}".format(struc, pdb_clean_suff))
                     pdb_clean_file_to = os.path.join(pdb_clean_dir, "{}.{}".format(struc, pdb_clean_suff))
                     if os.path.isfile(pdb_clean_file_from):
                         shutil.move(pdb_clean_file_from, pdb_clean_file_to)
@@ -1302,6 +1313,30 @@ def main(args):
 
     move_stamp_output(prefix, stamp_out_dir, wd)
 
+    ### CONVERT SUPERPOSED FILES TO MMCIF FORMAT
+
+    supp_pdbs = [f for f in os.listdir(supp_pdbs_dir) if f.endswith(".pdb")]
+    for file in supp_pdbs:
+        file_root, _ = os.path.splitext(file)
+        supp_file = os.path.join(supp_pdbs_dir, file)
+        cif_file = os.path.join(supp_cifs_dir, "{}.cif".format(file_root))
+        if os.path.isfile(cif_file):
+            log.debug(f"{cif_file} file already exists")
+            pass
+        else:
+            pdb_df = PDBXreader(supp_file).atoms(format_type = "pdb", excluded=())
+
+            pdb_df["label_alt_id"] = "."
+            # cif_df["pdbx_PDB_ins_code"] = "?"
+            pdb_df["pdbx_formal_charge"] = "?"
+
+            w = PDBXwriter(outputfile = cif_file)
+            w.run(pdb_df[cif_cols_order], format_type = "mmcif")
+            log.info("Converted {} to mmcif".format(file_root))
+    log.info("Superposed files have been converted to mmcif format")
+
+    ### PDB SIMPLIFICATION SECTION
+
     simple_pdbs = [f for f in os.listdir(simple_pdbs_dir) if f.endswith(".pdb")]
     n_simple_pdbs = len(simple_pdbs) # number of simplified pdbs, will be 0 the first time thiis command is executed
 
@@ -1310,48 +1345,69 @@ def main(args):
         pass
     else:
         supp_files = sorted([f for f in os.listdir(supp_pdbs_dir) if f.endswith(".pdb")])
-        shutil.copy(os.path.join(supp_pdbs_dir, supp_files[0]), simple_pdbs_dir) # copy first chain as is
+        pdb_root, pdb_ext = os.path.splitext(supp_files[0])
+        pdb_name = pdb_root.split(".")[0]
+        simple_file_name = f'{pdb_name}.simp{pdb_ext}'
+        shutil.copy(os.path.join(supp_pdbs_dir, supp_files[0]), os.path.join(simple_pdbs_dir, simple_file_name)) # copy first chain as is
         print(f'Keeping protein atoms for {supp_files[0]}')
         for file in supp_files[1:]: # we keep protei atoms for first chain
             if file.endswith(".pdb"):
                 supp_file = os.path.join(supp_pdbs_dir, file)
-                simple_file = os.path.join(simple_pdbs_dir, file) 
+                file_root, file_ext = os.path.splitext(file)
+                file_name = file_root.split(".")[0]
+                simple_file = os.path.join(simple_pdbs_dir, f'{file_name}.simp{file_ext}')
+                # simple_file = os.path.join(simple_pdbs_dir, file) 
                 if os.path.isfile(simple_file):
                     log.debug("Simple pdb file already exists")
                     pass
                 else:
                     #remove_extra_ligs(supp_file, simple_file)
-                    simplify_pdb(supp_file, simple_file, struc_fmt)
+                    simplify_pdb(supp_file, simple_file, "pdb")
         log.info("All structure domains have been simplified") # what we want to do here is seimply keep protein atoms for first chain, this is to make visualisation quicker and simpler
     
     log.info("PDB simplification completed")
 
-    ### GET LIGAND DATA
+    ### CONVERT SIMPLE FILES TO MMCIF FORMAT
 
-    lig_data_path = os.path.join(results_dir, "{}_lig_data.pkl".format(input_id))
-    if OVERRIDE or not os.path.isfile(lig_data_path):
-        ligs_df = get_lig_data(simple_pdbs_dir, lig_data_path, struc_fmt) # this now uses auth fields as it seems that is what pdbe-arpeggio uses.
-        log.info("Saved ligand data")
-    else:
-        ligs_df = pd.read_pickle(lig_data_path)
-        log.debug("Loaded ligand data")
+    simple_pdbs = [f for f in os.listdir(simple_pdbs_dir) if f.endswith(".pdb")]
+    for file in simple_pdbs:
+        file_root, _ = os.path.splitext(file)
+        simple_file = os.path.join(simple_pdbs_dir, file)
+        cif_file = os.path.join(simple_cifs_dir, "{}.cif".format(file_root))
+        if os.path.isfile(cif_file):
+            log.debug(f"{cif_file} file already exists")
+            pass
+        else:
+            pdb_df = PDBXreader(simple_file).atoms(format_type = "pdb", excluded=())
+
+            pdb_df["label_alt_id"] = "."
+            # cif_df["pdbx_PDB_ins_code"] = "?"
+            pdb_df["pdbx_formal_charge"] = "?"
+
+            w = PDBXwriter(outputfile = cif_file)
+            w.run(pdb_df[cif_cols_order], format_type = "mmcif")
+            log.info("Converted {} to mmcif".format(file_root))
+    log.info("Simple files have been converted to mmcif format")
 
     ### UNIPROT MAPPING SECTION
 
     swissprot = load_pickle(swissprot_pkl)
     log.debug("Swissprot loaded")
 
-    for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
+    supp_strucs = [f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")]
+
+    for struc in supp_strucs: #fnames are now the files of the STAMPED PDB files, not the original ones
         struc_root, _ =  os.path.splitext(struc)
-        struc_mapping_path = os.path.join(mappings_dir, "{}_mapping.csv".format(struc_root))
-        pdb2up_mapping_dict_path = os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_root))
-        up2pdb_mapping_dict_path = os.path.join(mappings_dir, "{}_up2pdb.pkl".format(struc_root))
+        struc_name = struc_root.split(".")[0]
+        struc_mapping_path = os.path.join(mappings_dir, "{}_mapping.csv".format(struc_name))
+        pdb2up_mapping_dict_path = os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))
+        up2pdb_mapping_dict_path = os.path.join(mappings_dir, "{}_up2pdb.pkl".format(struc_name))
         if OVERRIDE or not os.path.isfile(struc_mapping_path):
-            mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_pdbs_dir, mappings_dir, swissprot, struc_fmt = struc_fmt) # giving supp, here, instead of simple because we want them all
+            mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_cifs_dir, mappings_dir, swissprot, struc_fmt = "mmcif") # giving supp, here, instead of simple because we want them all
             mapping_dict, up2pdb = create_resnum_mapping_dicts(mapping)
             dump_pickle(mapping_dict, pdb2up_mapping_dict_path)
             dump_pickle(up2pdb, up2pdb_mapping_dict_path)
-            log.info("Mapping files for {} generated".format(struc_root))
+            log.info("Mapping files for {} generated".format(struc_name))
         else:
             mapping = pd.read_csv(struc_mapping_path)
             mapping_dict = load_pickle(pdb2up_mapping_dict_path)
@@ -1369,18 +1425,25 @@ def main(args):
         for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
             ## DSSP
             struc_root, _ =  os.path.splitext(struc)
-            dssp_csv = os.path.join(dssp_dir, "{}.csv".format(struc_root))
+            struc_name = struc_root.split(".")[0]
+            dssp_csv = os.path.join(dssp_dir, "{}.csv".format(struc_name))
 
             if OVERRIDE or not os.path.isfile(dssp_csv):
                 dssp_data = run_dssp(struc, supp_pdbs_dir, dssp_dir)
-                log.info("DSSP run successfully on {}".format(struc_root))
+                log.info("DSSP run successfully on {}".format(struc_name))
             else:
                 dssp_data = pd.read_csv(dssp_csv)
                 log.debug("DSSP data already exists")
             
             ## UNIPROT MAPPING
 
-            dssp_data.PDB_ResNum = dssp_data.PDB_ResNum.astype(str) 
+            dssp_data.PDB_ResNum = dssp_data.PDB_ResNum.astype(str)
+            mapping.PDB_ResNum = mapping.PDB_ResNum.astype(str)
+
+            # print(mapping.head(3))
+            # print(mapping.columns.tolist())
+            # print(dssp_data.head(3))
+            # print(dssp_data.columns.tolist())
 
             mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum") # don't think this merging worked well
 
@@ -1395,6 +1458,16 @@ def main(args):
 
     log.info("DSSP section completed")
 
+    ### GET LIGAND DATA
+
+    lig_data_path = os.path.join(results_dir, "{}_lig_data.pkl".format(input_id))
+    if OVERRIDE or not os.path.isfile(lig_data_path):
+        ligs_df = get_lig_data(supp_cifs_dir, lig_data_path, "mmcif") # this now uses auth fields as it seems that is what pdbe-arpeggio uses.
+        log.info("Saved ligand data")
+    else:
+        ligs_df = pd.read_pickle(lig_data_path)
+        log.debug("Loaded ligand data")
+
     ### ARPEGGIO PART ###
 
     fps_out = os.path.join(results_dir, f'{input_id}_ligs_fingerprints.pkl') 
@@ -1407,23 +1480,30 @@ def main(args):
         # no_mapping_pdbs = []
         fp_status = {}
 
-        for struc in fnames:
+        for struc in supp_strucs:
             struc_root, _ =  os.path.splitext(struc)
+            struc_name = struc_root.split(".")[0]
+
             struc2ligs[struc] = []
+
+            # print(struc)
+            # print(ligs_df)
+
+
             struc_df = ligs_df.query('struc_name == @struc')
 
-            pdb_path = os.path.join(supp_pdbs_dir, struc)
-            pdb_path_root, _ =  os.path.splitext(pdb_path)
+            struc_path = os.path.join(supp_cifs_dir, struc)
+            # pdb_path_root, _ =  os.path.splitext(pdb_path)
 
-            pdb_df = PDBXreader(pdb_path).atoms(format_type = struc_fmt, excluded=())
-            cif_out = os.path.join(supp_cifs_dir, "{}.cif".format(struc_root))
+            # pdb_df = PDBXreader(pdb_path).atoms(format_type = "pdb", excluded=())
+            # cif_out = os.path.join(supp_cifs_dir, "{}.cif".format(struc_root))
 
-            pdb_df["label_alt_id"] = "."
-            # cif_df["pdbx_PDB_ins_code"] = "?"
-            pdb_df["pdbx_formal_charge"] = "?"
+            # pdb_df["label_alt_id"] = "."
+            # # cif_df["pdbx_PDB_ins_code"] = "?"
+            # pdb_df["pdbx_formal_charge"] = "?"
 
-            w = PDBXwriter(outputfile = cif_out)
-            w.run(pdb_df[cif_cols_order], format_type = "mmcif")
+            # w = PDBXwriter(outputfile = cif_out)
+            # w.run(pdb_df[cif_cols_order], format_type = "mmcif")
             
             if struc_df.empty:
                 fp_status[struc_root] = "No-Ligs"
@@ -1434,19 +1514,20 @@ def main(args):
 
             ligand_names = list(set([row.label_comp_id for _, row in struc_df.iterrows()]))
 
-            arpeggio_default_json_name = os.path.basename(struc).split(".")[0]
+            # arpeggio_default_json_name = os.path.basename(struc).split(".")[0]
+            arpeggio_default_json_name = os.path.basename(struc_name)
             arpeggio_default_out = os.path.join(arpeggio_dir, f"{arpeggio_default_json_name}.json")  # this is how arpeggio names the file (splits by "." and takes the first part)
 
-            arpeggio_out = os.path.join(arpeggio_dir, struc_root + ".json")
-            arpeggio_proc_df_out = os.path.join(arpeggio_dir, struc_root + "_proc.pkl")
+            arpeggio_out = os.path.join(arpeggio_dir, struc_name + ".json")
+            arpeggio_proc_df_out = os.path.join(arpeggio_dir, struc_name + "_proc.pkl")
 
             if OVERRIDE or not os.path.isfile(arpeggio_proc_df_out):
 
                 if OVERRIDE or not os.path.isfile(arpeggio_out):
 
-                    ec, cmd = run_arpeggio(cif_out, lig_sel, arpeggio_dir)
+                    ec, cmd = run_arpeggio(struc_path, lig_sel, arpeggio_dir)
                     if ec != 0:
-                        fp_status[struc_root] = "Arpeggio-Fail"
+                        fp_status[struc_name] = "Arpeggio-Fail"
                         log.error("Arpeggio failed for {} with {}".format(struc, cmd))
                         continue
 
@@ -1454,11 +1535,11 @@ def main(args):
 
                 arp_df = pd.read_json(arpeggio_out)
 
-                pdb2up = load_pickle(os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_root)))
+                pdb2up = load_pickle(os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name)))
 
-                proc_inters, fp_stat = process_arpeggio_df(arp_df, struc_root, ligand_names, pdb2up)
+                proc_inters, fp_stat = process_arpeggio_df(arp_df, struc_name, ligand_names, pdb2up)
 
-                coords_dict = generate_dictionary(cif_out)
+                coords_dict = generate_dictionary(struc_path)
 
                 proc_inters["coords_end"] = proc_inters.set_index(["auth_asym_id_end", "label_comp_id_end", "auth_seq_id_end", "auth_atom_id_end"]).index.map(coords_dict.get)
                 proc_inters["coords_bgn"] = proc_inters.set_index(["auth_asym_id_bgn", "label_comp_id_bgn", "auth_seq_id_bgn", "auth_atom_id_bgn"]).index.map(coords_dict.get)
@@ -1489,7 +1570,7 @@ def main(args):
                     ###### CHECK IF LIGAND FINGERPRINT IS EMPTY ######
                     lig_rows.UniProt_ResNum_end = lig_rows.UniProt_ResNum_end.astype(int)
                     lig_fp = lig_rows.UniProt_ResNum_end.unique().tolist()
-                    lig_key = "{}_".format(struc_root) + "_".join([str(l) for l in lig])
+                    lig_key = "{}_".format(struc_root.split(".")[0]) + "_".join([str(l) for l in lig])
                     lig_fps[lig_key] = lig_fp
                 except:
                     log.warning("Empty fingerprint for ligand {} in {}".format(lig, struc_root))
@@ -1540,17 +1621,17 @@ def main(args):
 
     #### GENERATING CHIMERAX FILES
 
-    attr_out = os.path.join(simple_pdbs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.defattr')
-    chimera_script_out = os.path.join(simple_pdbs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.cxc')
-    chX_session_out = os.path.join(simple_pdbs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.cxs')
+    attr_out = os.path.join(simple_cifs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.defattr')
+    chimera_script_out = os.path.join(simple_cifs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.cxc')
+    chX_session_out = os.path.join(simple_cifs_dir,f'{input_id}_{lig_clust_method}_{lig_clust_dist}.cxs')
 
     if OVERRIDE or not os.path.isfile(attr_out):
                 
-        order_dict = write_chimeraX_attr(cluster_id_dict, simple_pdbs_dir, attr_out) # this actually needs to be simplified PDBs, not transformed ones ???
+        order_dict = write_chimeraX_attr(cluster_id_dict, simple_cifs_dir, attr_out) # this actually needs to be simplified PDBs, not transformed ones ???
 
     if OVERRIDE or not os.path.isfile(chimera_script_out) or not os.path.isfile(chX_session_out):
 
-        write_chimeraX_script(chimera_script_out, simple_pdbs_dir, os.path.basename(attr_out), os.path.basename(chX_session_out), chimeraX_commands, cluster_ids) # this actually needs to be simplified PDBs, not transformed ones ???
+        write_chimeraX_script(chimera_script_out, simple_cifs_dir, os.path.basename(attr_out), os.path.basename(chX_session_out), chimeraX_commands, cluster_ids) # this actually needs to be simplified PDBs, not transformed ones ???
 
     log.info(f'Chimera attributes and script generated for {input_id}')
 
@@ -1678,9 +1759,6 @@ def main(args):
         log.debug("Loaded AA profiles")
 
     log.info("DSSP analysis completed")
-
-    # print("Finishing here!")
-    # sys.exit(0)
 
     ### VARIATION SECTION
 
