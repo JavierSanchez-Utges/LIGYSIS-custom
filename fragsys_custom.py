@@ -777,7 +777,8 @@ def create_alignment_from_struc(example_struc, fasta_path, struc_fmt = "mmcif", 
     """
     Given an example structure, creates and reformats an MSA.
     """
-    create_fasta_from_seq(get_seq_from_pdb(example_struc, struc_fmt = struc_fmt), fasta_path) # CREATES FASTA FILE FROM PDB FILE
+    main_chain_seq = get_seq_from_pdb(example_struc, struc_fmt = struc_fmt)
+    create_fasta_from_seq(main_chain_seq, fasta_path) # CREATES FASTA FILE FROM PDB FILE
     fasta_root, _ = os.path.splitext(fasta_path)    
     hits_out = "{}.out".format(fasta_root)
     hits_aln = "{}.sto".format(fasta_root)
@@ -785,13 +786,15 @@ def create_alignment_from_struc(example_struc, fasta_path, struc_fmt = "mmcif", 
     jackhmmer(fasta_path, hits_out, hits_aln , n_it = n_it, seqdb = seqdb,) # RUNS JACKHAMMER USING AS INPUT THE SEQUENCE FROM THE PDB AND GENERATES ALIGNMENT
     add_acc2msa(hits_aln, hits_aln_rf)
 
-def get_seq_from_pdb(pdb_path, struc_fmt = "mmcif"): # MIGHT NEED TO BE MORE SELECTIVE WITH CHAIN, ETC
+def get_seq_from_pdb(pdb_path, struc_fmt = "mmcif"): # SELECTS FIRST CHAIN. CURRENTLY ONLY WORKS WITH ONE CHAIN
     """
     Generates aa sequence string from a pdb coordinates file.
     """
     struc = PDBXreader(pdb_path).atoms(format_type = struc_fmt, excluded=())
-    return "".join([aa_code[aa] for aa in struc.query('group_PDB == "ATOM"').drop_duplicates(["auth_seq_id"]).label_comp_id.tolist()])
-
+    chains = sorted(list(struc.auth_asym_id.unique())) ### TODO: we generate sequence only for the first chain. this means this will only work for MONOMERIC PROTEINS
+    main_chain = chains[0]
+    main_chain_seq = "".join([aa_code[aa] for aa in struc.query('group_PDB == "ATOM" & auth_asym_id == @main_chain').drop_duplicates(["auth_seq_id"]).label_comp_id.tolist()])
+    return main_chain_seq
 def create_fasta_from_seq(seq, out):
     """
     Saves input sequence to fasta file to use as input for jackhmmer.
@@ -823,10 +826,12 @@ def add_acc2msa(aln_in, aln_out, fmt_in = msa_fmt):
     recs = []
     for rec in aln:
         if rec.id == "query":
-            continue
+            rec.annotations["accession"] = "QUERYSEQ" # ADDS ACCESSION FIELD TO QUERY SEQUENCE
+            rec.annotations["start"] = 1
+            rec.annotations["end"] = len(rec.seq)
         else:
             rec.annotations["accession"] = rec.id.split("|")[1]
-            recs.append(rec)
+        recs.append(rec)
     Bio.SeqIO.write(recs, aln_out, fmt_in)
 
 def get_target_prot_cols(msa_in, msa_fmt = msa_fmt): 
@@ -1600,6 +1605,8 @@ def main(args):
 
                 proc_inters["width"] = proc_inters["contact"].apply(determine_width)
                 proc_inters["color"] = proc_inters["contact"].apply(determine_color)
+
+                proc_inters["width"] = proc_inters["width"]/2
                 proc_inters.to_pickle(arpeggio_proc_df_out)
 
                 fp_status[struc_root] = fp_stat
@@ -1819,6 +1826,10 @@ def main(args):
     if run_variants: 
 
         example_struc = os.path.join(supp_cifs_dir, sorted([f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")])[0]) # first structure in the list, which is one with protein atoms on simple.
+        struc_root, _ = os.path.splitext(os.path.basename(example_struc))
+        struc_name = struc_root.split(".")[0]
+        # print((mappings_dir, struc_name, os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))), flush = True)
+        struc_mapping = load_pickle(os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name)))
         fasta_path = os.path.join(varalign_dir, "{}.fa".format(input_id))
         fasta_root, _ = os.path.splitext(fasta_path)    
         hits_aln = "{}.sto".format(fasta_root)  
@@ -1856,7 +1867,13 @@ def main(args):
         aln_obj = Bio.AlignIO.read(hits_aln_rf, msa_fmt) #crashes if target protein is not human!
         aln_info_path = os.path.join(varalign_dir, "{}_rf_info_table.p.gz".format(input_id))
         if OVERRIDE_variants or not os.path.isfile(aln_info_path):
-            aln_info = varalign.alignments.alignment_info_table(aln_obj)
+            example_struc_df = PDBXreader(example_struc).atoms(format_type = "mmcif", excluded=())
+            chains = sorted(list(example_struc_df.auth_asym_id.unique())) ### TODO: we generate sequence only for the first chain. this means this will only work for MONOMERIC PROTEINS
+            main_chain = chains[0]
+            # print((main_chain, struc_mapping), flush = True)
+            # log.info(main_chain, struc_mapping)
+            pdb_resnums = list(struc_mapping[main_chain].keys())
+            aln_info = varalign.alignments.alignment_info_table_FRAGSYS_CUSTOM(aln_obj, struc_mapping[main_chain]) ##### ADD PDB RESNUMS HERE OF STRUCTURE SEQUENCE
             aln_info.to_pickle(aln_info_path)
             log.info("Saved MSA info table")
         else:
@@ -1958,11 +1975,16 @@ def main(args):
 
         shenkin_mapped_out = os.path.join(results_dir, "{}_ress_consvar.pkl".format(input_id))
         if OVERRIDE or not os.path.isfile(shenkin_mapped_out): # we leave it as OVERRIDE and not OVERRIDE_variants to fix the wrong pseudocounts
-            aln_ids = list(set([seqid[0] for seqid in indexed_mapping_table.index.tolist() if uniprot_id in seqid[0]])) # THIS IS EMPTY IF QUERY SEQUENCE IS NOT FOUND
+            # print(list(set([seqid[0] for seqid in indexed_mapping_table.index.tolist()])))
+            aln_ids = list(set([seqid[0] for seqid in indexed_mapping_table.index.tolist() if "query" in seqid[0]])) # THIS IS EMPTY IF QUERY SEQUENCE IS NOT FOUND
             n_aln_ids = len(aln_ids)
+            # print(aln_ids)
             if n_aln_ids != 1:
                 log.warning("There are {} sequences matching input protein accession".format(str(n_aln_ids)))
+
+            # print(shenkin_filt, indexed_mapping_table)
             mapped_data = merge_shenkin_df_and_mapping(shenkin_filt, indexed_mapping_table, aln_ids)
+            # print(mapped_data)
             mapped_data.to_pickle(shenkin_mapped_out)
         else:
             mapped_data = pd.read_pickle(shenkin_mapped_out)
