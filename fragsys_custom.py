@@ -186,6 +186,15 @@ MES_sig_t = float(config["thresholds"].get("MES_sig_t"))                        
 
 ### FUNCTIONS
 
+## UTILITIES FUNCTIONS
+
+def add_double_quotes_for_single_quote(df, columns = ["auth_atom_id", "label_atom_id"]):
+    for column in columns:
+        df[column] = df[column].apply(
+            lambda x: x if str(x).startswith('"') and str(x).endswith('"') else f'"{x}"' if "'" in str(x) else x
+        )
+    return df
+
 ## SETUP FUNCTIONS
 
 def setup_dirs(dirs):
@@ -257,7 +266,7 @@ def stamp(domains, prefix, out):
     if "STAMPDIR" not in os.environ:
         os.environ["STAMPDIR"] = stampdir
     args = [
-        stamp_bin, "-l", domains, "-rough", "-n",
+        stamp_bin, "-l", domains, "-rough", "-n", ### STAMP STILL CRASHES IF PATHS ARE TOO LONG ###
         str(2), "-prefix", prefix, ">", out
     ]
     cmd = " ".join(args)
@@ -320,6 +329,7 @@ def simplify_pdb(supp_file, simple_file, struc_fmt = "mmcif"):
     Simplifies pdb file by removing all non-ATOM records.
     """
     df = PDBXreader(inputfile = supp_file).atoms(format_type = struc_fmt, excluded=())
+    df = add_double_quotes_for_single_quote(df)
     df_hetatm = df.query('group_PDB != "ATOM"')
     if df_hetatm.empty:
         return # no HETATM records, no simple file is written
@@ -375,6 +385,18 @@ def get_swissprot():
         proteins[acc]["seq"] = protein.seq
     return proteins
 
+def get_protein_sequence(uniprot_id):
+    url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
+    response = requests.get(url)
+    
+    if response.ok:
+        fasta_data = response.text
+        # Removing the description line (first line starting with ">")
+        sequence = ''.join(fasta_data.split('\n')[1:])
+        return sequence
+    else:
+        raise ValueError(f"Error fetching data for UniProt ID {uniprot_id}")
+
 def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swissprot, struc_fmt = "mmcif"):
     """
     Retrieves the mapping between the UniProt sequence and the PDB sequence by doing an alignment.
@@ -382,10 +404,12 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swis
     input_struct = os.path.join(struc_dir, struc)
     pdb_structure = PDBXreader(inputfile = input_struct).atoms(format_type = struc_fmt, excluded=()) # ProIntVar reads the local file
     
-    seq_record = str(swissprot[uniprot_id]["seq"])
+    # seq_record = str(swissprot[uniprot_id]["seq"])
+    sequence = get_protein_sequence(uniprot_id)
+
     pps = pdb_structure.query('group_PDB == "ATOM"')[['label_comp_id', 'auth_asym_id', 'auth_seq_id']].drop_duplicates().groupby('auth_asym_id')  # groupby chain
     pdb_chain_seqs = [(chain, SeqUtils.seq1(''.join(seq['label_comp_id'].values)), seq['auth_seq_id'].values) for chain, seq in pps] # list of tuples like: [(chain_id, chain_seq, [chain resnums])]
-    alignments = [pairwise2.align.globalxs(str(seq_record),chain_seq[1], -5, -1) for chain_seq in pdb_chain_seqs] # list of lists of tuples containing SwissProt seq - PDB chain seq pairwise alignment
+    alignments = [pairwise2.align.globalxs(sequence, chain_seq[1], -5, -1) for chain_seq in pdb_chain_seqs] # list of lists of tuples containing SwissProt seq - PDB chain seq pairwise alignment
     
     maps = []
     for pdb_chain_seq, alignment in zip(pdb_chain_seqs, alignments):
@@ -402,8 +426,9 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swis
     prointvar_mapping = prointvar_mapping[['UniProt_ResNum','UniProt_ResName','PDB_ResName','PDB_ResNum','PDB_ChainID']]
     prointvar_mapping = prointvar_mapping[~prointvar_mapping.PDB_ResNum.isnull()]
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
-    struc_root, _ = os.path.splitext(struc) 
-    prointvar_mapping_csv = os.path.join(mappings_dir, struc_root + "_mapping.csv")
+    struc_root, _ = os.path.splitext(struc)
+    struc_name = struc_root.split(".")[0]
+    prointvar_mapping_csv = os.path.join(mappings_dir, struc_name + "_mapping.csv")
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(str) # PDB_ResNum is a string, not an integer
     prointvar_mapping.to_csv(prointvar_mapping_csv, index = False)
     return prointvar_mapping
@@ -558,27 +583,43 @@ def get_labs(fingerprints_dict):
     """
     return [k for k in fingerprints_dict.keys()]
 
+# def generate_dictionary(mmcif_file):
+#     """
+#     Generates coordinate dictionary from a mmCIF file.
+#     """
+#     # Parse the mmCIF file
+#     mmcif_dict = MMCIF2Dict(mmcif_file)
+
+#     # Initialise the result dictionary
+#     result = {}
+
+#     # Iterate through the atoms and populate the dictionary
+#     for i, auth_asym_id in enumerate(mmcif_dict["_atom_site.auth_asym_id"]):
+#         label_comp_id_end = mmcif_dict["_atom_site.label_comp_id"][i]
+#         auth_seq_id = mmcif_dict["_atom_site.auth_seq_id"][i]
+#         auth_atom_id_end = mmcif_dict["_atom_site.auth_atom_id"][i]
+#         x = mmcif_dict["_atom_site.Cartn_x"][i]
+#         y = mmcif_dict["_atom_site.Cartn_y"][i]
+#         z = mmcif_dict["_atom_site.Cartn_z"][i]
+
+#         # Dictionary creation
+#         result[auth_asym_id, label_comp_id_end, auth_seq_id, auth_atom_id_end] = [x, y, z]
+
+    return result
+
+## mmcif dict with ProIntVar
 def generate_dictionary(mmcif_file):
-    """
-    Generates coordinate dictionary from a mmCIF file.
-    """
-    # Parse the mmCIF file
-    mmcif_dict = MMCIF2Dict(mmcif_file)
 
-    # Initialise the result dictionary
-    result = {}
+    cif_df = PDBXreader(inputfile = mmcif_file).atoms(format_type = "mmcif", excluded=())
 
-    # Iterate through the atoms and populate the dictionary
-    for i, auth_asym_id in enumerate(mmcif_dict["_atom_site.auth_asym_id"]):
-        label_comp_id_end = mmcif_dict["_atom_site.label_comp_id"][i]
-        auth_seq_id = mmcif_dict["_atom_site.auth_seq_id"][i]
-        auth_atom_id_end = mmcif_dict["_atom_site.auth_atom_id"][i]
-        x = mmcif_dict["_atom_site.Cartn_x"][i]
-        y = mmcif_dict["_atom_site.Cartn_y"][i]
-        z = mmcif_dict["_atom_site.Cartn_z"][i]
+    # Create the keys using vectorized operation
+    keys = list(zip(cif_df['auth_asym_id'], cif_df['label_comp_id'], cif_df['auth_seq_id'], cif_df['auth_atom_id']))
 
-        # Dictionary creation
-        result[auth_asym_id, label_comp_id_end, auth_seq_id, auth_atom_id_end] = [x, y, z]
+    # Create the values as a list of lists (x, y, z)
+    values = cif_df[['Cartn_x', 'Cartn_y', 'Cartn_z']].to_numpy().tolist()
+
+    # Combine the keys and values into a dictionary
+    result = dict(zip(keys, values))
 
     return result
 
@@ -1156,7 +1197,7 @@ def main(args):
     stamp_out_dir = os.path.join(output_dir, "stamp_out")
     supp_pdbs_dir = os.path.join(output_dir, "supp_pdbs")
     supp_cifs_dir = os.path.join(output_dir, "supp_cifs")
-    simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
+    # simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
     simple_cifs_dir = os.path.join(output_dir, "simple_cifs")
     clean_pdbs_dir = os.path.join(output_dir, "clean_pdbs")
     pdb_clean_dir = os.path.join(output_dir, "pdb_clean")
@@ -1170,7 +1211,8 @@ def main(args):
         raw_pdbs_dir, raw_cifs_dir,
         clean_pdbs_dir, stamp_out_dir,
         supp_pdbs_dir, supp_cifs_dir,
-        simple_pdbs_dir, simple_cifs_dir,
+        # simple_pdbs_dir,
+        simple_cifs_dir,
         pdb_clean_dir, mappings_dir, dssp_dir,
         arpeggio_dir, varalign_dir,
     ]
@@ -1216,6 +1258,7 @@ def main(args):
             shutil.copy(input_cif_path, raw_cifs_dir)
 
             cif_df = PDBXreader(input_cif_path).atoms(format_type = struc_fmt, excluded=())
+            # cif_df = add_double_quotes_for_single_quote(cif_df)
             pdb_out = os.path.join(raw_pdbs_dir, "{}.pdb".format(struc_root))
 
             # cif_df["label_alt_id"] = "."
@@ -1229,8 +1272,12 @@ def main(args):
         for struc in strucs:
             struc_root, struc_ext = os.path.splitext(struc)
             input_pdb_path = os.path.join(input_dir, struc)
-            shutil.copy(input_pdb_path, raw_pdbs_dir)
-            log.info("Copied {} to raw_pdbs_dir".format(struc))
+            output_pdb_path = os.path.join(raw_pdbs_dir, struc)
+            if OVERRIDE or not os.path.isfile(output_pdb_path):
+                shutil.copy(input_pdb_path, raw_pdbs_dir)
+                log.info("Copied {} to raw_pdbs_dir".format(struc))
+            else:
+                log.debug("File {} already exists".format(output_pdb_path))
 
 
     ### CLEANING FILES
@@ -1325,6 +1372,7 @@ def main(args):
             pass
         else:
             pdb_df = PDBXreader(supp_file).atoms(format_type = "pdb", excluded=())
+            pdb_df = add_double_quotes_for_single_quote(pdb_df)
 
             pdb_df["label_alt_id"] = "."
             # cif_df["pdbx_PDB_ins_code"] = "?"
@@ -1335,59 +1383,60 @@ def main(args):
             log.info("Converted {} to mmcif".format(file_root))
     log.info("Superposed files have been converted to mmcif format")
 
-    ### PDB SIMPLIFICATION SECTION
+    ### CIF SIMPLIFICATION SECTION
 
-    simple_pdbs = [f for f in os.listdir(simple_pdbs_dir) if f.endswith(".pdb")]
-    n_simple_pdbs = len(simple_pdbs) # number of simplified pdbs, will be 0 the first time thiis command is executed
+    simple_cifs = [f for f in os.listdir(simple_cifs_dir) if f.endswith(".cif")]
+    n_simple_cifs = len(simple_cifs) # number of simplified pdbs, will be 0 the first time thiis command is executed
 
-    if n_simple_pdbs == n_domains:
+    if n_simple_cifs == n_domains:
         log.debug("Structure domains already simplified")
         pass
     else:
-        supp_files = sorted([f for f in os.listdir(supp_pdbs_dir) if f.endswith(".pdb")])
-        pdb_root, pdb_ext = os.path.splitext(supp_files[0])
-        pdb_name = pdb_root.split(".")[0]
-        simple_file_name = f'{pdb_name}.simp{pdb_ext}'
-        shutil.copy(os.path.join(supp_pdbs_dir, supp_files[0]), os.path.join(simple_pdbs_dir, simple_file_name)) # copy first chain as is
-        print(f'Keeping protein atoms for {supp_files[0]}')
+        supp_files = sorted([f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")])
+        cif_root, cif_ext = os.path.splitext(supp_files[0])
+        cif_name = cif_root.split(".")[0]
+        simple_file_name = f'{cif_name}.simp{cif_ext}'
+        shutil.copy(os.path.join(supp_cifs_dir, supp_files[0]), os.path.join(simple_cifs_dir, simple_file_name)) # copy first chain as is
+        log.info(f'Keeping protein atoms for {supp_files[0]}')
         for file in supp_files[1:]: # we keep protei atoms for first chain
-            if file.endswith(".pdb"):
-                supp_file = os.path.join(supp_pdbs_dir, file)
+            if file.endswith(".cif"):
+                supp_file = os.path.join(supp_cifs_dir, file)
                 file_root, file_ext = os.path.splitext(file)
                 file_name = file_root.split(".")[0]
-                simple_file = os.path.join(simple_pdbs_dir, f'{file_name}.simp{file_ext}')
+                simple_file = os.path.join(simple_cifs_dir, f'{file_name}.simp{file_ext}')
                 # simple_file = os.path.join(simple_pdbs_dir, file) 
                 if os.path.isfile(simple_file):
                     log.debug("Simple pdb file already exists")
                     pass
                 else:
                     #remove_extra_ligs(supp_file, simple_file)
-                    simplify_pdb(supp_file, simple_file, "pdb")
+                    simplify_pdb(supp_file, simple_file, "mmcif")
         log.info("All structure domains have been simplified") # what we want to do here is seimply keep protein atoms for first chain, this is to make visualisation quicker and simpler
     
-    log.info("PDB simplification completed")
+    log.info("CIF simplification completed")
 
     ### CONVERT SIMPLE FILES TO MMCIF FORMAT
 
-    simple_pdbs = [f for f in os.listdir(simple_pdbs_dir) if f.endswith(".pdb")]
-    for file in simple_pdbs:
-        file_root, _ = os.path.splitext(file)
-        simple_file = os.path.join(simple_pdbs_dir, file)
-        cif_file = os.path.join(simple_cifs_dir, "{}.cif".format(file_root))
-        if os.path.isfile(cif_file):
-            log.debug(f"{cif_file} file already exists")
-            pass
-        else:
-            pdb_df = PDBXreader(simple_file).atoms(format_type = "pdb", excluded=())
+    # simple_pdbs = [f for f in os.listdir(simple_pdbs_dir) if f.endswith(".pdb")]
+    # for file in simple_pdbs:
+    #     file_root, _ = os.path.splitext(file)
+    #     simple_file = os.path.join(simple_pdbs_dir, file)
+    #     cif_file = os.path.join(simple_cifs_dir, "{}.cif".format(file_root))
+    #     if os.path.isfile(cif_file):
+    #         log.debug(f"{cif_file} file already exists")
+    #         pass
+    #     else:
+    #         pdb_df = PDBXreader(simple_file).atoms(format_type = "pdb", excluded=())
+    #         # pdb_df = add_double_quotes_for_single_quote(pdb_df)
 
-            pdb_df["label_alt_id"] = "."
-            # cif_df["pdbx_PDB_ins_code"] = "?"
-            pdb_df["pdbx_formal_charge"] = "?"
+    #         pdb_df["label_alt_id"] = "."
+    #         # cif_df["pdbx_PDB_ins_code"] = "?"
+    #         pdb_df["pdbx_formal_charge"] = "?"
 
-            w = PDBXwriter(outputfile = cif_file)
-            w.run(pdb_df[cif_cols_order], format_type = "mmcif")
-            log.info("Converted {} to mmcif".format(file_root))
-    log.info("Simple files have been converted to mmcif format")
+    #         w = PDBXwriter(outputfile = cif_file)
+    #         w.run(pdb_df[cif_cols_order], format_type = "mmcif")
+    #         log.info("Converted {} to mmcif".format(file_root))
+    # log.info("Simple files have been converted to mmcif format")
 
     ### UNIPROT MAPPING SECTION
 
@@ -1409,8 +1458,8 @@ def main(args):
             dump_pickle(up2pdb, up2pdb_mapping_dict_path)
             log.info("Mapping files for {} generated".format(struc_name))
         else:
-            mapping = pd.read_csv(struc_mapping_path)
-            mapping_dict = load_pickle(pdb2up_mapping_dict_path)
+            # mapping = pd.read_csv(struc_mapping_path)
+            # mapping_dict = load_pickle(pdb2up_mapping_dict_path)
             log.debug("Mapping files for {} already exists".format(struc_root))
 
     log.info("UniProt mapping section completed")
@@ -1436,6 +1485,8 @@ def main(args):
                 log.debug("DSSP data already exists")
             
             ## UNIPROT MAPPING
+            struc_mapping_path = os.path.join(mappings_dir, "{}_mapping.csv".format(struc_name))
+            mapping = pd.read_csv(struc_mapping_path)
 
             dssp_data.PDB_ResNum = dssp_data.PDB_ResNum.astype(str)
             mapping.PDB_ResNum = mapping.PDB_ResNum.astype(str)
@@ -1445,13 +1496,16 @@ def main(args):
             # print(dssp_data.head(3))
             # print(dssp_data.columns.tolist())
 
+            # print(mapping.columns.tolist())
+            # print(dssp_data.columns.tolist())
             mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum") # don't think this merging worked well
+            # print(mapping.columns.tolist())
 
             mapped_dssps.append(mapping)
 
-            mapped_dssp_df = pd.concat(mapped_dssps)
+        mapped_dssp_df = pd.concat(mapped_dssps)
 
-            mapped_dssp_df.to_pickle(os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id)))
+        mapped_dssp_df.to_pickle(os.path.join(results_dir, "{}_dssp_mapped.pkl".format(input_id)))
     else:
         mapped_dssp_df = pd.read_pickle(dssp_mapped_out)
         log.debug("Loaded mapped DSSP data")

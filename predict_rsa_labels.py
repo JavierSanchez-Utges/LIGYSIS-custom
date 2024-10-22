@@ -74,6 +74,10 @@ def main(input_id):
     final_preds = final_model.predict(x=vector_df, batch_size=27, verbose=0)
     rounded_predictions = np.argmax(final_preds, axis=-1)
     site_names = vector_df.index.tolist()
+    
+    clab_dict = {}
+    for i in range(len(vector_df)):
+        clab_dict[site_names[i]] = rounded_predictions[i]+1
 
     # Calculate functional scores
     func_scores_dict = {}
@@ -82,6 +86,7 @@ def main(input_id):
         func_scores_dict[site_names[i]] = round(func_score, 2)
 
     # Add data to DataFrame
+    bss_data["Cluster"] = bss_data.ID.map(clab_dict)
     bss_data["FS"] = bss_data.ID.map(func_scores_dict)
 
     # Save the modified DataFrame
