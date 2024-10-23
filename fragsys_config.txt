@@ -1,39 +1,25 @@
 ### FRAGSYS CONFIG FILE ###
 
-[binaries]
-dssp_bin = /cluster/gjb_lab/2394007/miniconda/envs/msa/bin/mkdssp
+[paths]
 
+## BINARIES
+
+dssp_bin = /cluster/gjb_lab/2394007/miniconda/envs/msa/bin/mkdssp
 stamp_bin = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/bin/linux/stamp
 transform_bin = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/bin/linux/transform
-
 clean_pdb_python_bin = /cluster/gjb_lab/2394007/miniconda/envs/arpeggio/bin/python
 clean_pdb_bin = /cluster/gjb_lab/2394007/pandda_analysis/clean_pdb.py
-
 arpeggio_python_bin = /cluster/gjb_lab/2394007/miniconda/envs/pdbe-arpeggio-env/bin/python
 arpeggio_bin = /cluster/gjb_lab/2394007/miniconda/envs/pdbe-arpeggio-env/bin/pdbe-arpeggio
 
-[dbs]
+## DATABASES
+
 ensembl_sqlite = /cluster/gjb_lab/2394007/pandda_analysis/phase5/prots/.varalign/ensembl_cache.sqlite
 gnomad_vcf = /homes/smacgowan/NOBACK/resources/gnomad/gnomad.exomes.r2.0.1.sites.vcf.gz
-swissprot_pkl = /cluster/gjb_lab/2394007/data/all_species/swissprot_15_09_2023_NR.pkl
 swissprot = /cluster/gjb_lab/2394007/data/all_species/swissprot_15_09_2023_NR.fasta
 
-[formats]
-msa_fmt = stockholm
+## DIRECTORIES
 
-[other]
 stampdir = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/defs/
-stamp_roi = ALL
-lig_clust_metric = i_rel
-lig_clust_method = average
-
-[thresholds]
-arpeggio_dist = 5.0
-CONS_t_h = 75
-CONS_t_l = 25
-JACKHMMER_n_it = 3
-lig_clust_dist = 0.50
-MES_sig_t = 0.2
-MES_t = 1.0
 
 ### END OF CONFIG FILE ###

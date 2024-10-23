@@ -61,21 +61,21 @@ def load_pickle(pickle_in):
 
 pdb_clean_suffixes = ["break_residues", "breaks"]
 
-simple_ions = [
-    "ZN", "MN", "CL", "MG", "CD", "NI", "NA", "IOD", "CA", "BR", "XE"
-]
+# simple_ions = [
+#     "ZN", "MN", "CL", "MG", "CD", "NI", "NA", "IOD", "CA", "BR", "XE"
+# ]
 
-acidic_ions = [
-    "PO4", "ACT", "SO4", "MLI", "CIT", "ACY", "VO4"
-]
+# acidic_ions = [
+#     "PO4", "ACT", "SO4", "MLI", "CIT", "ACY", "VO4"
+# ]
 
-non_relevant_ligs_manual = [
-    "DMS", "EDO", "HOH", "TRS", "GOL", "OGA", "FMN", "PG4", "PGR",
-    "MPD", "TPP", "MES", "PLP", "HYP", "CSO", "UNX", "EPE", "PEG",
-    "PGE", "DOD", "SUI"
-]
+# non_relevant_ligs_manual = [
+#     "DMS", "EDO", "HOH", "TRS", "GOL", "OGA", "FMN", "PG4", "PGR",
+#     "MPD", "TPP", "MES", "PLP", "HYP", "CSO", "UNX", "EPE", "PEG",
+#     "PGE", "DOD", "SUI"
+# ]
 
-non_relevant = non_relevant_ligs_manual + simple_ions + acidic_ions
+# non_relevant = non_relevant_ligs_manual + simple_ions + acidic_ions
 
 pdb_resnames = [
     "ALA", "CYS", "ASP", "GLU", "PHE", "GLY", "HIS", "ILE", "LYS", "LEU",       ### ONE OF THESE MIGHT BE ENOUGH ###
@@ -116,7 +116,6 @@ cif_cols_order = [
 chimeraX_commands = [
     "color white; set bgColor white",
     "set silhouette ON; set silhouetteWidth 2; set silhouetteColor black",
-    #"color byattribute binding_site palette paired-12; col ::binding_site==-1 grey",
     "~disp; select ~protein; ~select : HOH; ~select ::binding_site==-1; disp sel; ~sel",
     "surf; surface color white; transparency 70 s;"
 ]
@@ -154,35 +153,19 @@ wd = os.getcwd()
 config = configparser.ConfigParser()
 config.read("fragsys_config.txt")
 
-dssp_bin = config["binaries"].get("dssp_bin")
-stamp_bin = config["binaries"].get("stamp_bin")
-transform_bin = config["binaries"].get("transform_bin")
-clean_pdb_python_bin = config["binaries"].get("clean_pdb_python_bin")
-clean_pdb_bin = config["binaries"].get("clean_pdb_bin")
-arpeggio_python_bin = config["binaries"].get("arpeggio_python_bin")
-arpeggio_bin = config["binaries"].get("arpeggio_bin")
+dssp_bin = config["paths"].get("dssp_bin")
+stamp_bin = config["paths"].get("stamp_bin")
+transform_bin = config["paths"].get("transform_bin")
+clean_pdb_python_bin = config["paths"].get("clean_pdb_python_bin")
+clean_pdb_bin = config["paths"].get("clean_pdb_bin")
+arpeggio_python_bin = config["paths"].get("arpeggio_python_bin")
+arpeggio_bin = config["paths"].get("arpeggio_bin")
 
-gnomad_vcf = config["dbs"].get("gnomad_vcf")
-swissprot_pkl = config["dbs"].get("swissprot_pkl")
-swissprot_path = config["dbs"].get("swissprot")
-ensembl_sqlite_path = config["dbs"].get("ensembl_sqlite")
+gnomad_vcf = config["paths"].get("gnomad_vcf")
+swissprot_path = config["paths"].get("swissprot")
+ensembl_sqlite_path = config["paths"].get("ensembl_sqlite")
 
-stampdir = config["other"].get("stampdir")
-lig_clust_metric = config["other"].get("lig_clust_metric")
-lig_clust_method = config["other"].get("lig_clust_method")
-
-msa_fmt = config["formats"].get("msa_fmt")
-
-stamp_ROI = config["other"].get("stamp_roi")
-
-#arpeggio_dist = float(config["thresholds"].get("arpeggio_dist"))            # this should not be needed anymore after we switch to pdbe-arpeggio
-CONS_t_h = float(config["thresholds"].get("CONS_t_h"))                      # conservation score upper threshold to consider position highly divergent. Currently only working with Shenkin divergence score.
-CONS_t_l = float(config["thresholds"].get("CONS_t_l"))                      # conservation score lower threshold to consider position highly conserved. Currenyly only working with Shenkin divergence score.
-CONS_ts = [CONS_t_l, CONS_t_h]
-JACKHMMER_n_it = int(config["thresholds"].get("JACKHMMER_n_it"))
-lig_clust_dist = float(config["thresholds"].get("lig_clust_dist"))
-MES_t = float(config["thresholds"].get("MES_t"))  
-MES_sig_t = float(config["thresholds"].get("MES_sig_t"))                          # Missense Enrichment Score threshold to consider a position missense-depleted, or enriched.
+stampdir = config["paths"].get("stampdir")
 
 ### FUNCTIONS
 
@@ -246,7 +229,7 @@ def get_uniprot_info(uniprot_id):
 
 ## STAMPING FUNCTIONS
 
-def generate_STAMP_domains(pdbs_dir, domains_out, roi = stamp_ROI):
+def generate_STAMP_domains(pdbs_dir, domains_out, roi = "ALL"):
     """
     Genereates domains file, needed to run STAMP.
     """
@@ -366,25 +349,6 @@ def get_lig_data(cifs_dir, ligs_df_path, struc_fmt = "mmcif"):
 
 ## SIFTS FUNCTIONS
 
-def get_swissprot(): 
-    """
-    Retrieves sequences and their data from Swiss-Prot
-
-    :param db: absolute path to a fasta file containing sequences, Swiss-Prot database by default
-    :type db: str
-    :returns: dictionary containing the sequence id, description and sequence for all proteins in Swiss-Prot
-    :rtpe: dict
-    """
-    swissprot_dict = Bio.SeqIO.parse(swissprot_path, "fasta")
-    proteins = {}
-    for protein in swissprot_dict:
-        acc = protein.id.split("|")[1]
-        proteins[acc] = {}
-        proteins[acc]["id"] = protein.id
-        proteins[acc]["desc"] = protein.description
-        proteins[acc]["seq"] = protein.seq
-    return proteins
-
 def get_protein_sequence(uniprot_id):
     url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
     response = requests.get(url)
@@ -397,14 +361,13 @@ def get_protein_sequence(uniprot_id):
     else:
         raise ValueError(f"Error fetching data for UniProt ID {uniprot_id}")
 
-def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, swissprot, struc_fmt = "mmcif"):
+def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, struc_fmt = "mmcif"):
     """
     Retrieves the mapping between the UniProt sequence and the PDB sequence by doing an alignment.
     """
     input_struct = os.path.join(struc_dir, struc)
     pdb_structure = PDBXreader(inputfile = input_struct).atoms(format_type = struc_fmt, excluded=()) # ProIntVar reads the local file
-    
-    # seq_record = str(swissprot[uniprot_id]["seq"])
+
     sequence = get_protein_sequence(uniprot_id)
 
     pps = pdb_structure.query('group_PDB == "ATOM"')[['label_comp_id', 'auth_asym_id', 'auth_seq_id']].drop_duplicates().groupby('auth_asym_id')  # groupby chain
@@ -608,6 +571,7 @@ def get_labs(fingerprints_dict):
     return result
 
 ## mmcif dict with ProIntVar
+
 def generate_dictionary(mmcif_file):
 
     cif_df = PDBXreader(inputfile = mmcif_file).atoms(format_type = "mmcif", excluded=())
@@ -773,7 +737,7 @@ def get_all_cluster_ress(membership_dict, fingerprints_dict):
 
 ### CONSERVATION + VARIATION FUNCTIONS
 
-def create_alignment_from_struc(example_struc, fasta_path, struc_fmt = "mmcif", n_it = JACKHMMER_n_it, seqdb = swissprot_path):
+def create_alignment_from_struc(example_struc, fasta_path, struc_fmt = "mmcif", n_it = 3, seqdb = swissprot_path):
     """
     Given an example structure, creates and reformats an MSA.
     """
@@ -795,6 +759,7 @@ def get_seq_from_pdb(pdb_path, struc_fmt = "mmcif"): # SELECTS FIRST CHAIN. CURR
     main_chain = chains[0]
     main_chain_seq = "".join([aa_code[aa] for aa in struc.query('group_PDB == "ATOM" & auth_asym_id == @main_chain').drop_duplicates(["auth_seq_id"]).label_comp_id.tolist()])
     return main_chain_seq
+
 def create_fasta_from_seq(seq, out):
     """
     Saves input sequence to fasta file to use as input for jackhmmer.
@@ -802,7 +767,7 @@ def create_fasta_from_seq(seq, out):
     with open(out, "w+") as fh:
         fh.write(">query\n{}\n".format(seq))
 
-def jackhmmer(seq, hits_out, hits_aln, n_it = JACKHMMER_n_it, seqdb = swissprot_path):
+def jackhmmer(seq, hits_out, hits_aln, n_it = 3, seqdb = swissprot_path):
     """
     Runs jackhmmer on an input seq for a number of iterations and returns exit code, should be 0 if all is OK.
     """
@@ -811,7 +776,7 @@ def jackhmmer(seq, hits_out, hits_aln, n_it = JACKHMMER_n_it, seqdb = swissprot_
     exit_code = os.system(cmd)
     return cmd, exit_code
 
-def add_acc2msa(aln_in, aln_out, fmt_in = msa_fmt):
+def add_acc2msa(aln_in, aln_out, fmt_in = "stockholm"):
     """
     Modifies AC field of jackhmmer alignment in stockholm format.
     
@@ -834,7 +799,7 @@ def add_acc2msa(aln_in, aln_out, fmt_in = msa_fmt):
         recs.append(rec)
     Bio.SeqIO.write(recs, aln_out, fmt_in)
 
-def get_target_prot_cols(msa_in, msa_fmt = msa_fmt): 
+def get_target_prot_cols(msa_in, msa_fmt = "stockholm"): 
     """
     Returns list of MSA col idx that are popualted on the protein target.
     """
@@ -950,7 +915,7 @@ def format_shenkin(shenkin, prot_cols, out = None):
         shenkin_filt.to_pickle(out)#, index = False)
     return shenkin_filt
 
-def get_human_subset_msa(aln_in, human_msa_out, fmt_in = msa_fmt):
+def get_human_subset_msa(aln_in, human_msa_out, fmt_in = "stockholm"):
     """
     Creates a subset MSA containing only human sequences.
     """
@@ -1002,7 +967,7 @@ def format_variant_table(df, col_mask, vep_mask = ["missense_variant"], tab_form
     df_filt = df_filt[df_filt.alignment_column.isin(col_mask)]
     return df_filt
 
-def get_missense_df(aln_in, variants_df, shenkin_aln, prot_cols, aln_out, aln_fmt = msa_fmt, get_or = True):
+def get_missense_df(aln_in, variants_df, shenkin_aln, prot_cols, aln_out, aln_fmt = "stockholm", get_or = True):
     """
     Generates a dataframe for the subset of human sequences with variants
     mapping to them. Calculates shenkin, and occupancy data, and then
@@ -1079,7 +1044,7 @@ def get_OR(df, variant_col = "variants"):
         df.loc[i, "se_OR"] = round(se_or, 2)
     return df
 
-def add_miss_class(df, miss_df_out = None, cons_col = "shenkin", MES_t = MES_t, cons_ts = CONS_ts, colours = consvar_class_colours):
+def add_miss_class(df, miss_df_out = None, cons_col = "shenkin", MES_t = 1.0, cons_ts = [25, 75], colours = consvar_class_colours):
     """
     Adds two columns to missense dataframe. These columns will put columns
     into classes according to their divergence and missense enrichment score.
@@ -1129,7 +1094,7 @@ def merge_shenkin_df_and_mapping(shenkin_df, mapping_df, aln_ids):
     ).drop("MSA_column", axis = 1)
     return mapped_data
 
-def get_bss_table(results_df, job_id):
+def get_bss_table(results_df):
     all_bs_ress = results_df.query('binding_sites == binding_sites').reset_index(drop=True)
     all_bs_ress = all_bs_ress.explode("binding_sites")
     all_bs_ress["bs_id"] = all_bs_ress.job_id + "." + all_bs_ress.binding_sites.astype(str)
@@ -1191,6 +1156,15 @@ def main(args):
     OVERRIDE = args.override
     OVERRIDE_variants = args.override_variants
     run_variants = args.variants
+    lig_clust_method = args.clust_method
+    lig_clust_dist = args.clust_dist
+    JACKHMMER_n_it = args.hmm_iters
+    MES_t = args.mes_thresh
+    cons_t_low =  args.cons_thresh_low
+    cons_t_high = args.cons_thresh_high
+
+    cons_ts = [cons_t_low, cons_t_high]
+
 
     ### SETTING UP DIRECTORIES
 
@@ -1202,7 +1176,6 @@ def main(args):
     stamp_out_dir = os.path.join(output_dir, "stamp_out")
     supp_pdbs_dir = os.path.join(output_dir, "supp_pdbs")
     supp_cifs_dir = os.path.join(output_dir, "supp_cifs")
-    # simple_pdbs_dir = os.path.join(output_dir, "simple_pdbs")
     simple_cifs_dir = os.path.join(output_dir, "simple_cifs")
     clean_pdbs_dir = os.path.join(output_dir, "clean_pdbs")
     pdb_clean_dir = os.path.join(output_dir, "pdb_clean")
@@ -1216,7 +1189,6 @@ def main(args):
         raw_pdbs_dir, raw_cifs_dir,
         clean_pdbs_dir, stamp_out_dir,
         supp_pdbs_dir, supp_cifs_dir,
-        # simple_pdbs_dir,
         simple_cifs_dir,
         pdb_clean_dir, mappings_dir, dssp_dir,
         arpeggio_dir, varalign_dir,
@@ -1420,33 +1392,7 @@ def main(args):
     
     log.info("CIF simplification completed")
 
-    ### CONVERT SIMPLE FILES TO MMCIF FORMAT
-
-    # simple_pdbs = [f for f in os.listdir(simple_pdbs_dir) if f.endswith(".pdb")]
-    # for file in simple_pdbs:
-    #     file_root, _ = os.path.splitext(file)
-    #     simple_file = os.path.join(simple_pdbs_dir, file)
-    #     cif_file = os.path.join(simple_cifs_dir, "{}.cif".format(file_root))
-    #     if os.path.isfile(cif_file):
-    #         log.debug(f"{cif_file} file already exists")
-    #         pass
-    #     else:
-    #         pdb_df = PDBXreader(simple_file).atoms(format_type = "pdb", excluded=())
-    #         # pdb_df = add_double_quotes_for_single_quote(pdb_df)
-
-    #         pdb_df["label_alt_id"] = "."
-    #         # cif_df["pdbx_PDB_ins_code"] = "?"
-    #         pdb_df["pdbx_formal_charge"] = "?"
-
-    #         w = PDBXwriter(outputfile = cif_file)
-    #         w.run(pdb_df[cif_cols_order], format_type = "mmcif")
-    #         log.info("Converted {} to mmcif".format(file_root))
-    # log.info("Simple files have been converted to mmcif format")
-
     ### UNIPROT MAPPING SECTION
-
-    swissprot = load_pickle(swissprot_pkl)
-    log.debug("Swissprot loaded")
 
     supp_strucs = [f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")]
 
@@ -1457,7 +1403,7 @@ def main(args):
         pdb2up_mapping_dict_path = os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))
         up2pdb_mapping_dict_path = os.path.join(mappings_dir, "{}_up2pdb.pkl".format(struc_name))
         if OVERRIDE or not os.path.isfile(struc_mapping_path):
-            mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_cifs_dir, mappings_dir, swissprot, struc_fmt = "mmcif") # giving supp, here, instead of simple because we want them all
+            mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_cifs_dir, mappings_dir, struc_fmt = "mmcif") # giving supp, here, instead of simple because we want them all
             mapping_dict, up2pdb = create_resnum_mapping_dicts(mapping)
             dump_pickle(mapping_dict, pdb2up_mapping_dict_path)
             dump_pickle(up2pdb, up2pdb_mapping_dict_path)
@@ -1864,7 +1810,7 @@ def main(args):
             shenkin_filt = pd.read_pickle(shenkin_filt_out)
             log.debug("Loaded filtered conservation data table")
 
-        aln_obj = Bio.AlignIO.read(hits_aln_rf, msa_fmt) #crashes if target protein is not human!
+        aln_obj = Bio.AlignIO.read(hits_aln_rf, "stockholm") #crashes if target protein is not human!
         aln_info_path = os.path.join(varalign_dir, "{}_rf_info_table.p.gz".format(input_id))
         if OVERRIDE_variants or not os.path.isfile(aln_info_path):
             example_struc_df = PDBXreader(example_struc).atoms(format_type = "mmcif", excluded=())
@@ -1947,7 +1893,7 @@ def main(args):
                     else:
                         missense_variants_df = add_miss_class(
                             missense_variants_df, miss_df_out,
-                            cons_col = "abs_norm_shenkin",
+                            cons_col = "abs_norm_shenkin", MES_t = MES_t, cons_ts = cons_ts,
                         )
                         log.info("Saved missense dataframe")
                 else:
@@ -2012,7 +1958,7 @@ def main(args):
 
     if OVERRIDE or not os.path.isfile(bss_table_out):
         mapped_data["job_id"] = input_id
-        _, bss_data = get_bss_table(mapped_data, input_id)
+        _, bss_data = get_bss_table(mapped_data)
         bss_data = bss_data.fillna("NaN") # pre-processing could also be done before saving the pickle
         bss_data.columns = headings # changing table column names
         bss_data["ID"] = bss_data["ID"].astype(int) # converting ID to int
@@ -2025,14 +1971,21 @@ def main(args):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description = "Clusters ligands, define, and characterise binding sites.")
-    parser.add_argument("input_dir", type = str, help = "Path to directory containing input structures")
-    parser.add_argument("uniprot_id", type = str, help = "Uniprot ID of the protein")
-    parser.add_argument("--struc_fmt", type = str, choices=["pdb", "mmcif"], default = "mmcif", help="Format of the input structures (must be 'pdb' or 'mmcif')")
-    parser.add_argument("--override", help = "Override any previously generated files.", action = "store_true")
-    parser.add_argument("--override_variants", help = "Override any previously generated files (ONLY VARIANTS SECTION).", action = "store_true")
-    parser.add_argument("--variants", help = "Retrieves Human variants form MSA and generates tables.", action = "store_true")
-
+    parser = argparse.ArgumentParser(description="Clusters ligands, defines, and characterises binding sites.")
+    parser.add_argument("input_dir", type=str, help="Path to directory containing input structures")
+    parser.add_argument("uniprot_id", type=str, help="UniProt ID of the protein")
+    parser.add_argument("struc_fmt", type=str, choices=["pdb", "mmcif"], default="mmcif", help="Format of the input structures (must be 'pdb' or 'mmcif')")
+    parser.add_argument("--override", help="Override any previously generated files.", action="store_true")
+    parser.add_argument("--override_variants", help="Override any previously generated files (ONLY VARIANTS SECTION).", action="store_true")
+    parser.add_argument("--variants", help="Retrieves Human variants from MSA and generates tables.", action="store_true")
+    parser.add_argument("--clust_method", type=str, default="average", help="Ligand clustering method (default: average)")
+    parser.add_argument("--clust_dist", type=float, default=0.50, help="Ligand clustering distance threshold (default: 0.50)")
+    parser.add_argument("--hmm_iters", type=int, default=3, help="Number of iterations for JACKHMMER (default: 3)")
+    parser.add_argument("--cons_thresh_high", type=int, default=75, help="Conservation high threshold (default: 75)")
+    parser.add_argument("--cons_thresh_low", type=int, default=25, help="Conservation low threshold (default: 25)")
+    parser.add_argument("--mes_thresh", type=float, default=1.0, help="MES threshold (default: 1.0)")
+    
     args = parser.parse_args()
 
     main(args)
+
