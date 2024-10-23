@@ -1214,9 +1214,14 @@ def main(args):
 
     uniprot_info_out = os.path.join(results_dir, "{}_uniprot_info.pkl".format(input_id))
     if OVERRIDE or not os.path.isfile(uniprot_info_out):
-        prot_info = info = get_uniprot_info(uniprot_id)
-        dump_pickle(prot_info, uniprot_info_out)
-        log.info("Obtained UniProt protein names")
+        if uniprot_id != "unknown": # PLACEHOLDER FOR WHEN THERE IS NO UNIPROT ID PROVIDED BY THE USER
+            prot_info = get_uniprot_info(uniprot_id)
+            dump_pickle(prot_info, uniprot_info_out)
+            log.info("Obtained UniProt protein names")
+        else:
+            prot_info = {"up_id": uniprot_id, "up_entry": "", "prot_name": ""}
+            dump_pickle(prot_info, uniprot_info_out)
+            log.info("UniProt ID was not provided, so there are no protein names...")
     else:
         pass
 
@@ -1418,11 +1423,15 @@ def main(args):
         pdb2up_mapping_dict_path = os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))
         up2pdb_mapping_dict_path = os.path.join(mappings_dir, "{}_up2pdb.pkl".format(struc_name))
         if OVERRIDE or not os.path.isfile(struc_mapping_path):
-            mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_cifs_dir, mappings_dir, struc_fmt = "mmcif") # giving supp, here, instead of simple because we want them all
-            mapping_dict, up2pdb = create_resnum_mapping_dicts(mapping)
-            dump_pickle(mapping_dict, pdb2up_mapping_dict_path)
-            dump_pickle(up2pdb, up2pdb_mapping_dict_path)
-            log.info("Mapping files for {} generated".format(struc_name))
+            if uniprot_id != "unknown" and prot_info["up_id"] != "":
+                mapping = retrieve_mapping_from_struc(struc, uniprot_id, supp_cifs_dir, mappings_dir, struc_fmt = "mmcif") # giving supp, here, instead of simple because we want them all
+                mapping_dict, up2pdb = create_resnum_mapping_dicts(mapping)
+                dump_pickle(mapping_dict, pdb2up_mapping_dict_path)
+                dump_pickle(up2pdb, up2pdb_mapping_dict_path)
+                log.info("Mapping files for {} generated".format(struc_name))
+            else:
+                ### TODO: FIX ME. Need to generate a pseudo-mapping from PDB ResNum to itself or to re-number from 1.
+                pass
         else:
             # mapping = pd.read_csv(struc_mapping_path)
             # mapping_dict = load_pickle(pdb2up_mapping_dict_path)
