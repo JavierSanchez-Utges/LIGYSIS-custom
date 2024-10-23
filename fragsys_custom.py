@@ -234,14 +234,16 @@ def generate_STAMP_domains(pdbs_dir, domains_out, roi = "ALL"):
     Genereates domains file, needed to run STAMP.
     """
     pdb_files = [file for file in os.listdir(pdbs_dir) if file.endswith(".pdb")]
+    if pdb_files == []:
+        pdb_files = [file for file in os.listdir(pdbs_dir) if file.endswith(".ent")] # trying .ent
     with open(domains_out, "w+") as fh:
         for pdb in pdb_files:
             pdb_root, pdb_ext = os.path.splitext(pdb)
-            if pdb_ext == ".pdb":
-                # pdb_name = pdb_root.split(".")[0]
-                pdb_name = pdb_root.replace(".clean", "") # can't rely on the split, as the pdb might have a . in the name
-                # fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_root + "." + roi, roi))
-                fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_name + ".supp", roi))
+            # THIS SHOULD ALWAYS BE EITHER .PDB OR .ENT
+            # pdb_name = pdb_root.split(".")[0]
+            pdb_name = pdb_root.replace(".clean", "") # can't rely on the split, as the pdb might have a . in the name
+            # fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_root + "." + roi, roi))
+            fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_name + ".supp", roi))
 
 def stamp(domains, prefix, out):
     """
@@ -1171,7 +1173,7 @@ def main(args):
     ### SETTING UP DIRECTORIES
 
     input_id = os.path.normpath(input_dir).split(os.sep)[-1]
-    output_dir = os.path.join(wd, "output", input_id)
+    output_dir = os.path.join(wd, "OUT", input_id)
     results_dir = os.path.join(output_dir, "results")
     raw_pdbs_dir = os.path.join(output_dir, "raw_pdbs")
     raw_cifs_dir = os.path.join(output_dir, "raw_cifs")
@@ -1224,6 +1226,8 @@ def main(args):
         strucs = [f for f in os.listdir(input_dir) if f.endswith(".cif")] # different extension depending on structure format
     elif struc_fmt == "pdb":
         strucs = [f for f in os.listdir(input_dir) if f.endswith(".pdb")]
+        if len(strucs) == 0:
+            strucs = [f for f in os.listdir(input_dir) if f.endswith(".ent")] # try .ent (this is default extension of PDB files downloaded from PDBe)
     n_strucs = len(strucs)
     log.info("Number of structures: {}".format(n_strucs))
 
@@ -1232,6 +1236,7 @@ def main(args):
     if struc_fmt == "mmcif":
         for struc in strucs:
             struc_root, struc_ext = os.path.splitext(struc)
+            log.info("Converting {} to pdb".format(struc_root))
             input_cif_path = os.path.join(input_dir, struc)
             # copy all structures to raw_cifs_dir and then transform format to .pdb and save to raw_pdbs_dir
             shutil.copy(input_cif_path, raw_cifs_dir)
@@ -1243,6 +1248,9 @@ def main(args):
             # cif_df["label_alt_id"] = "."
             # cif_df["pdbx_PDB_ins_code"] = "?"
             # cif_df["pdbx_formal_charge"] = "?"
+
+            ### replacing label_seq_id by auth_seq_id to cif_df
+            cif_df["label_seq_id"] = cif_df["auth_seq_id"]
 
             w = PDBXwriter(outputfile = pdb_out)
             w.run(cif_df, format_type = "pdb")
@@ -1262,6 +1270,8 @@ def main(args):
     ### CLEANING FILES
 
     pdb_strucs = [f for f in os.listdir(raw_pdbs_dir) if f.endswith(".pdb") and "clean" not in f]
+    if pdb_strucs == []:
+        pdb_strucs = [f for f in os.listdir(raw_pdbs_dir) if f.endswith(".ent") and "clean" not in f] # if no .pdb files, try .ent files
 
     for struc in pdb_strucs:
         struc_root, struc_ext = os.path.splitext(struc)  # "structure_name", ".pdb"
@@ -1403,7 +1413,7 @@ def main(args):
     for struc in supp_strucs: #fnames are now the files of the STAMPED PDB files, not the original ones
         struc_root, _ =  os.path.splitext(struc)
         # struc_name = struc_root.split(".")[0]
-        struc_name = struc_name.replace(".supp", "") # can't rely on file names not having "." in them
+        struc_name = struc_root.replace(".supp", "") # can't rely on file names not having "." in them
         struc_mapping_path = os.path.join(mappings_dir, "{}_mapping.csv".format(struc_name))
         pdb2up_mapping_dict_path = os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))
         up2pdb_mapping_dict_path = os.path.join(mappings_dir, "{}_up2pdb.pkl".format(struc_name))
@@ -1431,7 +1441,7 @@ def main(args):
             ## DSSP
             struc_root, _ =  os.path.splitext(struc)
             # struc_name = struc_root.split(".")[0]
-            struc_name = struc_name.replace(".supp", "") # can't rely on file names not having "." in them
+            struc_name = struc_root.replace(".supp", "") # can't rely on file names not having "." in them
             dssp_csv = os.path.join(dssp_dir, "{}.csv".format(struc_name))
 
             if OVERRIDE or not os.path.isfile(dssp_csv):
@@ -1494,7 +1504,7 @@ def main(args):
         for struc in supp_strucs:
             struc_root, _ =  os.path.splitext(struc)
             # struc_name = struc_root.split(".")[0]
-            struc_name = struc_name.replace(".supp", "") # can't rely on file names not having "." in them
+            struc_name = struc_root.replace(".supp", "") # can't rely on file names not having "." in them
 
             struc2ligs[struc] = []
 
@@ -1555,7 +1565,7 @@ def main(args):
                 proc_inters["width"] = proc_inters["contact"].apply(determine_width)
                 proc_inters["color"] = proc_inters["contact"].apply(determine_color)
 
-                proc_inters["width"] = proc_inters["width"]/2
+                proc_inters["width"] = proc_inters["width"]
                 proc_inters.to_pickle(arpeggio_proc_df_out)
 
                 fp_status[struc_root] = fp_stat
@@ -1680,6 +1690,7 @@ def main(args):
         log.debug("Loaded residue membership")
 
     ### DSSP DATA ANALYSIS
+    mapped_dssp_df['RSA'].replace("", np.nan, inplace=True)
     dsspd_filt = mapped_dssp_df.query('UniProt_ResNum == UniProt_ResNum and PDB_ResName != "X" and RSA == RSA').copy()
     dsspd_filt.SS = dsspd_filt.SS.fillna("C")
     dsspd_filt.SS = dsspd_filt.SS.replace("", "C")
@@ -1968,6 +1979,7 @@ def main(args):
         bss_data = bss_data.fillna("NaN") # pre-processing could also be done before saving the pickle
         bss_data.columns = headings # changing table column names
         bss_data["ID"] = bss_data["ID"].astype(int) # converting ID to int
+        bss_data = bss_data.sort_values(by = ["ID"]).reset_index(drop = True) # sorting by ID
         bss_data.to_pickle(bss_table_out)
         log.info("Saved binding site summary table")
     else:
