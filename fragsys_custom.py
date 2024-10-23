@@ -238,7 +238,8 @@ def generate_STAMP_domains(pdbs_dir, domains_out, roi = "ALL"):
         for pdb in pdb_files:
             pdb_root, pdb_ext = os.path.splitext(pdb)
             if pdb_ext == ".pdb":
-                pdb_name = pdb_root.split(".")[0]
+                # pdb_name = pdb_root.split(".")[0]
+                pdb_name = pdb_root.replace(".clean", "") # can't rely on the split, as the pdb might have a . in the name
                 # fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_root + "." + roi, roi))
                 fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_name + ".supp", roi))
 
@@ -390,7 +391,8 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, stru
     prointvar_mapping = prointvar_mapping[~prointvar_mapping.PDB_ResNum.isnull()]
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
     struc_root, _ = os.path.splitext(struc)
-    struc_name = struc_root.split(".")[0]
+    # struc_name = struc_root.split(".")[0]
+    struc_name = struc_root.replace(".supp", "") # can't rely on the split, as the pdb might have a . in the name
     prointvar_mapping_csv = os.path.join(mappings_dir, struc_name + "_mapping.csv")
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(str) # PDB_ResNum is a string, not an integer
     prointvar_mapping.to_csv(prointvar_mapping_csv, index = False)
@@ -1313,7 +1315,7 @@ def main(args):
         else:
             log.critical("STAMP failed with {}".format(cmd))
         
-    fnames = fnames_from_domains(domains_out)
+    fnames = fnames_from_domains(domains_out) # these thould be stamped files, so with .supp
 
     c = 0 # counting the number of superposed pdbs
     for file in fnames:
@@ -1371,7 +1373,8 @@ def main(args):
     else:
         supp_files = sorted([f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")])
         cif_root, cif_ext = os.path.splitext(supp_files[0])
-        cif_name = cif_root.split(".")[0]
+        # cif_name = cif_root.split(".")[0]
+        cif_name = cif_root.replace(".supp", "") # can't rely on file names not having "." in them
         simple_file_name = f'{cif_name}.simp{cif_ext}'
         shutil.copy(os.path.join(supp_cifs_dir, supp_files[0]), os.path.join(simple_cifs_dir, simple_file_name)) # copy first chain as is
         log.info(f'Keeping protein atoms for {supp_files[0]}')
@@ -1379,7 +1382,8 @@ def main(args):
             if file.endswith(".cif"):
                 supp_file = os.path.join(supp_cifs_dir, file)
                 file_root, file_ext = os.path.splitext(file)
-                file_name = file_root.split(".")[0]
+                # file_name = file_root.split(".")[0]
+                file_name = file_root.replace(".supp", "") # can't rely on file names not having "." in them
                 simple_file = os.path.join(simple_cifs_dir, f'{file_name}.simp{file_ext}')
                 # simple_file = os.path.join(simple_pdbs_dir, file) 
                 if os.path.isfile(simple_file):
@@ -1398,7 +1402,8 @@ def main(args):
 
     for struc in supp_strucs: #fnames are now the files of the STAMPED PDB files, not the original ones
         struc_root, _ =  os.path.splitext(struc)
-        struc_name = struc_root.split(".")[0]
+        # struc_name = struc_root.split(".")[0]
+        struc_name = struc_name.replace(".supp", "") # can't rely on file names not having "." in them
         struc_mapping_path = os.path.join(mappings_dir, "{}_mapping.csv".format(struc_name))
         pdb2up_mapping_dict_path = os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))
         up2pdb_mapping_dict_path = os.path.join(mappings_dir, "{}_up2pdb.pkl".format(struc_name))
@@ -1425,7 +1430,8 @@ def main(args):
         for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
             ## DSSP
             struc_root, _ =  os.path.splitext(struc)
-            struc_name = struc_root.split(".")[0]
+            # struc_name = struc_root.split(".")[0]
+            struc_name = struc_name.replace(".supp", "") # can't rely on file names not having "." in them
             dssp_csv = os.path.join(dssp_dir, "{}.csv".format(struc_name))
 
             if OVERRIDE or not os.path.isfile(dssp_csv):
@@ -1487,13 +1493,10 @@ def main(args):
 
         for struc in supp_strucs:
             struc_root, _ =  os.path.splitext(struc)
-            struc_name = struc_root.split(".")[0]
+            # struc_name = struc_root.split(".")[0]
+            struc_name = struc_name.replace(".supp", "") # can't rely on file names not having "." in them
 
             struc2ligs[struc] = []
-
-            # print(struc)
-            # print(ligs_df)
-
 
             struc_df = ligs_df.query('struc_name == @struc')
 
@@ -1577,7 +1580,9 @@ def main(args):
                     ###### CHECK IF LIGAND FINGERPRINT IS EMPTY ######
                     lig_rows.UniProt_ResNum_end = lig_rows.UniProt_ResNum_end.astype(int)
                     lig_fp = lig_rows.UniProt_ResNum_end.unique().tolist()
-                    lig_key = "{}_".format(struc_root.split(".")[0]) + "_".join([str(l) for l in lig])
+                    # lig_key = "{}_".format(struc_root.split(".")[0]) + "_".join([str(l) for l in lig])
+                    lig_key = "{}_".format(struc_name) + "_".join([str(l) for l in lig]) # can't rely on file names not having "." in them
+                    
                     lig_fps[lig_key] = lig_fp
                 except:
                     log.warning("Empty fingerprint for ligand {} in {}".format(lig, struc_root))
@@ -1773,7 +1778,8 @@ def main(args):
 
         example_struc = os.path.join(supp_cifs_dir, sorted([f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")])[0]) # first structure in the list, which is one with protein atoms on simple.
         struc_root, _ = os.path.splitext(os.path.basename(example_struc))
-        struc_name = struc_root.split(".")[0]
+        # struc_name = struc_root.split(".")[0]
+        struc_name = struc_root.replace(".supp", "") # can't rely on file names not having "." in them
         # print((mappings_dir, struc_name, os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))), flush = True)
         struc_mapping = load_pickle(os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name)))
         fasta_path = os.path.join(varalign_dir, "{}.fa".format(input_id))
