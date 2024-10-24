@@ -391,7 +391,7 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, stru
     prointvar_mapping = pd.concat(maps)
     prointvar_mapping = prointvar_mapping[['UniProt_ResNum','UniProt_ResName','PDB_ResName','PDB_ResNum','PDB_ChainID']]
     prointvar_mapping = prointvar_mapping[~prointvar_mapping.PDB_ResNum.isnull()]
-    prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
+    # prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
     struc_root, _ = os.path.splitext(struc)
     # struc_name = struc_root.split(".")[0]
     struc_name = struc_root.replace(".supp", "") # can't rely on the split, as the pdb might have a . in the name
@@ -399,6 +399,39 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, stru
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(str) # PDB_ResNum is a string, not an integer
     prointvar_mapping.to_csv(prointvar_mapping_csv, index = False)
     return prointvar_mapping
+
+def get_pseudo_mapping_from_struc(struc, struc_dir, mappings_dir, struc_fmt = "mmcif"):
+    """
+    Retrieves a pseudo-mapping for each structure when a UniProt ID is not provided.
+    """
+    input_struct = os.path.join(struc_dir, struc)
+    pdb_structure = PDBXreader(inputfile = input_struct).atoms(format_type = struc_fmt, excluded=()) # ProIntVar reads the local file
+
+    pps = pdb_structure.query('group_PDB == "ATOM"')[['label_comp_id', 'auth_asym_id', 'auth_seq_id']].drop_duplicates().groupby('auth_asym_id')  # groupby chain
+    pdb_chain_seqs = [(chain, SeqUtils.seq1(''.join(seq['label_comp_id'].values)), seq['auth_seq_id'].values) for chain, seq in pps] # list of tuples like: [(chain_id, chain_seq, [chain resnums])]
+    
+    data = {
+        "UniProt_ResNum": [],
+        "UniProt_ResName": [],
+        "PDB_ResName": [],
+        "PDB_ResNum": [],
+        "PDB_ChainID": [],
+    }
+
+    for chain in pdb_chain_seqs:
+        data["UniProt_ResNum"].extend([int(el) for el in chain[2]]) # not changing column names, but not actually UniProt
+        data["UniProt_ResName"].extend(list(chain[1])) # not changing column names, but not actually UniProt
+        data["PDB_ResName"].extend(list(chain[1]))
+        data["PDB_ResNum"].extend(chain[2])
+        data["PDB_ChainID"].extend(chain[0]*len(chain[2]))
+
+    pseudo_mapping = pd.DataFrame(data)
+    pseudo_mapping = pseudo_mapping[~pseudo_mapping.PDB_ResNum.isnull()]
+    struc_root, _ = os.path.splitext(struc)
+    struc_name = struc_root.replace(".supp", "") # can't rely on the split, as the pdb might have a . in the name
+    pseudo_mapping_csv = os.path.join(mappings_dir, struc_name + "_mapping.csv")
+    pseudo_mapping.to_csv(pseudo_mapping_csv, index = False)
+    return pseudo_mapping
 
 ## DSSP FUNCTIONS
 
@@ -1243,18 +1276,12 @@ def main(args):
             struc_root, struc_ext = os.path.splitext(struc)
             log.info("Converting {} to pdb".format(struc_root))
             input_cif_path = os.path.join(input_dir, struc)
-            # copy all structures to raw_cifs_dir and then transform format to .pdb and save to raw_pdbs_dir
-            shutil.copy(input_cif_path, raw_cifs_dir)
+            shutil.copy(input_cif_path, raw_cifs_dir) # copy all structures to raw_cifs_dir and then transform format to .pdb and save to raw_pdbs_dir
 
             cif_df = PDBXreader(input_cif_path).atoms(format_type = struc_fmt, excluded=())
-            # cif_df = add_double_quotes_for_single_quote(cif_df)
             pdb_out = os.path.join(raw_pdbs_dir, "{}.pdb".format(struc_root))
 
-            # cif_df["label_alt_id"] = "."
-            # cif_df["pdbx_PDB_ins_code"] = "?"
-            # cif_df["pdbx_formal_charge"] = "?"
-
-            ### replacing label_seq_id by auth_seq_id to cif_df
+            ### replacing label_seq_id by auth_seq_id to cif_df, needed so HETATM have resnums
             cif_df["label_seq_id"] = cif_df["auth_seq_id"]
 
             w = PDBXwriter(outputfile = pdb_out)
@@ -1429,9 +1456,12 @@ def main(args):
                 dump_pickle(mapping_dict, pdb2up_mapping_dict_path)
                 dump_pickle(up2pdb, up2pdb_mapping_dict_path)
                 log.info("Mapping files for {} generated".format(struc_name))
-            else:
-                ### TODO: FIX ME. Need to generate a pseudo-mapping from PDB ResNum to itself or to re-number from 1.
-                pass
+            else: # if no UniPrt ID is provided. Generate psuedo-mapping. Will be problematic if all structures don't share the same numbering
+                mapping = get_pseudo_mapping_from_struc(struc, supp_cifs_dir, mappings_dir, struc_fmt = "mmcif")
+                mapping_dict, up2pdb = create_resnum_mapping_dicts(mapping)
+                dump_pickle(mapping_dict, pdb2up_mapping_dict_path)
+                dump_pickle(up2pdb, up2pdb_mapping_dict_path)
+                log.info("Pseudo-mapping files for {} generated".format(struc_name))
         else:
             # mapping = pd.read_csv(struc_mapping_path)
             # mapping_dict = load_pickle(pdb2up_mapping_dict_path)
