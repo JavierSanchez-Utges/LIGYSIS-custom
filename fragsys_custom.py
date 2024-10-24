@@ -229,21 +229,23 @@ def get_uniprot_info(uniprot_id):
 
 ## STAMPING FUNCTIONS
 
-def generate_STAMP_domains(pdbs_dir, domains_out, roi = "ALL"):
+def generate_STAMP_domains(wd, pdbs_dir, domains_out, roi = "ALL"):
     """
     Genereates domains file, needed to run STAMP.
     """
     pdb_files = [file for file in os.listdir(pdbs_dir) if file.endswith(".pdb")]
     if pdb_files == []:
         pdb_files = [file for file in os.listdir(pdbs_dir) if file.endswith(".ent")] # trying .ent
+
+    rel_pdbs_dir = os.path.relpath(pdbs_dir, wd)
+    
     with open(domains_out, "w+") as fh:
         for pdb in pdb_files:
             pdb_root, pdb_ext = os.path.splitext(pdb)
             # THIS SHOULD ALWAYS BE EITHER .PDB OR .ENT
-            # pdb_name = pdb_root.split(".")[0]
             pdb_name = pdb_root.replace(".clean", "") # can't rely on the split, as the pdb might have a . in the name
-            # fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_root + "." + roi, roi))
-            fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_name + ".supp", roi))
+            # fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_name + ".supp", roi))
+            fh.write("{} {} {{{}}}\n".format(os.path.join(rel_pdbs_dir, pdb), pdb_name + ".supp", roi))
 
 def stamp(domains, prefix, out):
     """
@@ -1335,7 +1337,7 @@ def main(args):
         log.debug("STAMP domains file already exists")
         pass
     else:
-        generate_STAMP_domains(clean_pdbs_dir, domains_out)
+        generate_STAMP_domains(wd, clean_pdbs_dir, domains_out)
         log.info("STAMP domains file generated")
 
     prefix = "{}_stamp".format(input_id)
