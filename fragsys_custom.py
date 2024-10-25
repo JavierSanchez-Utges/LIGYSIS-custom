@@ -70,19 +70,11 @@ pdb_resnames = [
     "MET", "ASN", "PRO", "GLN", "ARG", "SER", "THR", "VAL", "TRP", "TYR"
 ]
 
-aas = [
-    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY",
-    "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "PRO", "SER",                   ### ONE OF THESE MIGHT BE ENOUGH ###
-    "THR", "TRP", "TYR", "VAL", "GLX", "GLI", "NLE", "CYC"
-]
-
 aas_1l= [
     "A", "R", "N", "D", "C", "Q", "E", "G", "H", "I",
     "L", "K", "M", "F", "P", "S", "T", "W", "Y", "V",
     "-"
 ]
-
-bbone = ["N", "CA", "C", "O"]
 
 aa_code = {
     "ALA" : 'A', "CYS" : 'C', "ASP" : 'D', "GLU" : 'E',
@@ -160,6 +152,9 @@ stampdir = config["paths"].get("stampdir")
 ## UTILITIES FUNCTIONS
 
 def add_double_quotes_for_single_quote(df, columns = ["auth_atom_id", "label_atom_id"]):
+    """
+    Adds double quotes to values with single quotes. This is needed for atoms with single quotes in their names.
+    """
     for column in columns:
         df[column] = df[column].apply(
             lambda x: x if str(x).startswith('"') and str(x).endswith('"') else f'"{x}"' if "'" in str(x) else x
@@ -197,7 +192,6 @@ def get_uniprot_info(uniprot_id):
         response.raise_for_status()
         data = response.json()
         
-        # Extract UniProt ID, entry name, and protein name
         uniprot_id = data.get('primaryAccession', 'N/A')
         uniprot_entry = data.get('uniProtkbId', 'N/A')
         protein_name = data.get('proteinDescription', {}).get('recommendedName', {}).get('fullName', {}).get('value', 'N/A')
@@ -207,11 +201,6 @@ def get_uniprot_info(uniprot_id):
             'up_entry': uniprot_entry,
             'prot_name': protein_name
         }
-    
-    # except requests.exceptions.HTTPError as http_err:
-    #     print(f"HTTP error occurred: {http_err}")
-    # except Exception as err:
-    #     print(f"An error occurred: {err}")
     except:
         return {"up_id": uniprot_id, "up_entry": "", "prot_name": ""}
 
@@ -228,11 +217,9 @@ def generate_STAMP_domains(wd, pdbs_dir, domains_out, roi = "ALL"):
     rel_pdbs_dir = os.path.relpath(pdbs_dir, wd)
     
     with open(domains_out, "w+") as fh:
-        for pdb in pdb_files:
+        for pdb in pdb_files: # THIS SHOULD ALWAYS BE EITHER .PDB OR .ENT
             pdb_root, pdb_ext = os.path.splitext(pdb)
-            # THIS SHOULD ALWAYS BE EITHER .PDB OR .ENT
             pdb_name = pdb_root.replace(".clean", "") # can't rely on the split, as the pdb might have a . in the name
-            # fh.write("{} {} {{{}}}\n".format(os.path.join(pdbs_dir, pdb), pdb_name + ".supp", roi))
             fh.write("{} {} {{{}}}\n".format(os.path.join(rel_pdbs_dir, pdb), pdb_name + ".supp", roi))
 
 def stamp(domains, prefix, out):
@@ -343,13 +330,15 @@ def get_lig_data(cifs_dir, ligs_df_path, struc_fmt = "mmcif"):
 ## SIFTS FUNCTIONS
 
 def get_protein_sequence(uniprot_id):
+    """
+    Retrieves the protein sequence for a given UniProt ID.
+    """
     url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
     response = requests.get(url)
     
     if response.ok:
         fasta_data = response.text
-        # Removing the description line (first line starting with ">")
-        sequence = ''.join(fasta_data.split('\n')[1:])
+        sequence = ''.join(fasta_data.split('\n')[1:]) # Removing the description line (first line starting with ">")
         return sequence
     else:
         raise ValueError(f"Error fetching data for UniProt ID {uniprot_id}")
@@ -381,9 +370,7 @@ def retrieve_mapping_from_struc(struc, uniprot_id, struc_dir, mappings_dir, stru
     prointvar_mapping = pd.concat(maps)
     prointvar_mapping = prointvar_mapping[['UniProt_ResNum','UniProt_ResName','PDB_ResName','PDB_ResNum','PDB_ChainID']]
     prointvar_mapping = prointvar_mapping[~prointvar_mapping.PDB_ResNum.isnull()]
-    # prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(int)
     struc_root, _ = os.path.splitext(struc)
-    # struc_name = struc_root.split(".")[0]
     struc_name = struc_root.replace(".supp", "") # can't rely on the split, as the pdb might have a . in the name
     prointvar_mapping_csv = os.path.join(mappings_dir, struc_name + "_mapping.csv")
     prointvar_mapping.PDB_ResNum = prointvar_mapping.PDB_ResNum.astype(str) # PDB_ResNum is a string, not an integer
@@ -471,13 +458,13 @@ def switch_columns(df, names):
     Switches columns in Arpeggio DataFrame, so that ligand atoms and protein
     atoms are always on the same column.
     """
-    # Columns to switch
+
     columns_to_switch = [
-        'auth_asym_id', 'auth_atom_id', 'auth_seq_id', 'label_comp_id'
+        'auth_asym_id', 'auth_atom_id',
+        'auth_seq_id', 'label_comp_id'
     ]
 
-    # Iterate through the DataFrame and switch columns where necessary
-    for index, row in df.iterrows():
+    for index, row in df.iterrows(): # Iterate through the DataFrame and switch columns where necessary
         if row['label_comp_id_end'] in names:
             for col in columns_to_switch:
                 bgn_col = f"{col}_bgn"
@@ -504,20 +491,17 @@ def create_resnum_mapping_dicts(df):
     pdb2up = {}
     up2pdb = {}
     
-    # Iterate over the dataframe
     for index, row in df.iterrows():
         chain_id = row['PDB_ChainID']
         pdb_resnum = row['PDB_ResNum']
         uniprot_resnum = row['UniProt_ResNum']
         
-        # Initialize dictionary for the chain ID if it doesn't exist
-        if chain_id not in pdb2up:
+        if chain_id not in pdb2up: # Initialise dictionary for the chain ID if it doesn't exist
             pdb2up[chain_id] = {}
         if uniprot_resnum not in up2pdb:
             up2pdb[uniprot_resnum] = []
         
-        # Add PDB_ResNum as key and UniProt_ResNum as value for the current chain
-        pdb2up[chain_id][str(pdb_resnum)] = uniprot_resnum
+        pdb2up[chain_id][str(pdb_resnum)] = uniprot_resnum 
         up2pdb[uniprot_resnum].append((chain_id, str(pdb_resnum)))
     
     return pdb2up, up2pdb
@@ -539,9 +523,7 @@ def process_arpeggio_df(arp_df, pdb_id, ligand_names, pdb2up):
     arp_df.auth_seq_id_end = arp_df.auth_seq_id_end.astype(str)
 
     inter_df = arp_df.query('interacting_entities == "INTER" & type == "atom-atom"').copy().reset_index(drop = True)
-
     inter_df = inter_df[inter_df['contact'].apply(lambda x: 'clash' not in x)].copy().reset_index(drop = True) # filtering out clashes
-    
     inter_df = inter_df.query('label_comp_id_bgn in @pdb_resnames or label_comp_id_end in @pdb_resnames').copy().reset_index(drop = True) # filtering out ligand-ligand interactions
     
     if inter_df.empty:
@@ -551,12 +533,8 @@ def process_arpeggio_df(arp_df, pdb_id, ligand_names, pdb2up):
     inter_df = inter_df.query('label_comp_id_bgn in @ligand_names or label_comp_id_end in @ligand_names').copy().reset_index(drop = True) # filtering out non-LOI interactions (only to avoid re-running Arpeggio, once it has been run with wrong selection)
     
     switched_df = switch_columns(inter_df, ligand_names)
-
     switched_df = switched_df.query('label_comp_id_end in @pdb_resnames').copy() # filtering out non-protein-ligand interactions
-
-    # Apply the function and create a new column
-    switched_df["UniProt_ResNum_end"] = switched_df.apply(lambda row: map_values(row, pdb2up), axis=1)
-    
+    switched_df["UniProt_ResNum_end"] = switched_df.apply(lambda row: map_values(row, pdb2up), axis=1) # Apply the function and create a new column
     switched_df = switched_df.sort_values(by=["auth_asym_id_end", "UniProt_ResNum_end", "auth_atom_id_end"]).reset_index(drop = True)
     
     return switched_df, "OK"
@@ -576,17 +554,16 @@ def get_labs(fingerprints_dict):
 ## mmcif dict with ProIntVar
 
 def generate_dictionary(mmcif_file):
-
+    """
+    Generates a dictionary of coordinates from an mmcif file.
+    """
     cif_df = PDBXreader(inputfile = mmcif_file).atoms(format_type = "mmcif", excluded=())
+    
+    keys = list(zip(cif_df['auth_asym_id'], cif_df['label_comp_id'], cif_df['auth_seq_id'], cif_df['auth_atom_id']))  # Create the keys using vectorised operations
+    
+    values = cif_df[['Cartn_x', 'Cartn_y', 'Cartn_z']].to_numpy().tolist() # Create the values as a list of lists (x, y, z)
 
-    # Create the keys using vectorized operation
-    keys = list(zip(cif_df['auth_asym_id'], cif_df['label_comp_id'], cif_df['auth_seq_id'], cif_df['auth_atom_id']))
-
-    # Create the values as a list of lists (x, y, z)
-    values = cif_df[['Cartn_x', 'Cartn_y', 'Cartn_z']].to_numpy().tolist()
-
-    # Combine the keys and values into a dictionary
-    result = dict(zip(keys, values))
+    result = dict(zip(keys, values)) # Combine the keys and values into a dictionary
 
     return result
 
@@ -647,13 +624,12 @@ def write_chimeraX_attr(cluster_id_dict, trans_dir, attr_out): # cluster_id_dict
     to pdb files to generate the attribute files later, and
     eventually colour models. 
     """
-    trans_files = [f for f in os.listdir(trans_dir) if f.endswith(".cif")] ### FIXME format
+    trans_files = [f for f in os.listdir(trans_dir) if f.endswith(".cif")]
     order_dict = {k : i+1 for i, k in enumerate(trans_files)}
     
     defattr_lines = []
 
     for k, v in cluster_id_dict.items():
-    #for k, v in lig2chain_cif.items():
 
         ld = k.split("_") # stands for lig data
 
@@ -830,7 +806,7 @@ def calculate_shenkin(aln_in, aln_fmt, out = None):
         gaps_pct.append(stats[3])
     df = pd.DataFrame(list(zip(list(range(1,len(scores)+1)),scores, occ,gaps, occ_pct, gaps_pct)), columns = ["col", "shenkin", "occ", "gaps", "occ_pct", "gaps_pct"])
     if out != None:
-        df.to_pickle(out)#, index = False)
+        df.to_pickle(out)
     return df
 
 def get_stats(col):
@@ -915,7 +891,7 @@ def format_shenkin(shenkin, prot_cols, out = None):
     shenkin_filt.loc[:, "rel_norm_shenkin"] = round(100*(shenkin_filt.shenkin - min_shenkin)/(max_shenkin - min_shenkin), 2) # ADDING NEW COLUMNS WITH DIFFERENT NORMALISED SCORES
     shenkin_filt.loc[:, "abs_norm_shenkin"] = round(100*(shenkin_filt.shenkin - 6)/(120 - 6), 2)
     if out != None:
-        shenkin_filt.to_pickle(out)#, index = False)
+        shenkin_filt.to_pickle(out)
     return shenkin_filt
 
 def get_human_subset_msa(aln_in, human_msa_out, fmt_in = "stockholm"):
@@ -1075,7 +1051,7 @@ def add_miss_class(df, miss_df_out = None, cons_col = "shenkin", MES_t = 1.0, co
     df["miss_color"] =  df.miss_class.map(coloring)
     
     if miss_df_out != None:
-        df.to_pickle(miss_df_out)#, index = False)
+        df.to_pickle(miss_df_out)
     return df
 
 def merge_shenkin_df_and_mapping(shenkin_df, mapping_df, aln_ids):
@@ -1090,7 +1066,6 @@ def merge_shenkin_df_and_mapping(shenkin_df, mapping_df, aln_ids):
     prot_mapping.reset_index(inplace = True)
     prot_mapping = prot_mapping.rename_axis(None, axis = "columns")
     prot_mapping.rename(index = None, columns = {"Alignment": "MSA_column", "Protein_position": "UniProt_ResNum"}, inplace = True)
-    # Merging the VarAlign data to the Pfam alignment to gain conservation and variation data for the whole family...
     mapped_data = pd.merge(
         prot_mapping[["MSA_column", "UniProt_ResNum"]], shenkin_df,
         left_on = "MSA_column", right_on = "alignment_column"
@@ -1167,7 +1142,6 @@ def main(args):
     cons_t_high = args.cons_thresh_high
 
     cons_ts = [cons_t_low, cons_t_high]
-
 
     ### SETTING UP DIRECTORIES
 
@@ -1362,7 +1336,6 @@ def main(args):
             pdb_df = add_double_quotes_for_single_quote(pdb_df)
 
             pdb_df["label_alt_id"] = "."
-            # cif_df["pdbx_PDB_ins_code"] = "?"
             pdb_df["pdbx_formal_charge"] = "?"
 
             w = PDBXwriter(outputfile = cif_file)
@@ -1381,7 +1354,6 @@ def main(args):
     else:
         supp_files = sorted([f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")])
         cif_root, cif_ext = os.path.splitext(supp_files[0])
-        # cif_name = cif_root.split(".")[0]
         cif_name = cif_root.replace(".supp", "") # can't rely on file names not having "." in them
         simple_file_name = f'{cif_name}.simp{cif_ext}'
         shutil.copy(os.path.join(supp_cifs_dir, supp_files[0]), os.path.join(simple_cifs_dir, simple_file_name)) # copy first chain as is
@@ -1390,15 +1362,12 @@ def main(args):
             if file.endswith(".cif"):
                 supp_file = os.path.join(supp_cifs_dir, file)
                 file_root, file_ext = os.path.splitext(file)
-                # file_name = file_root.split(".")[0]
                 file_name = file_root.replace(".supp", "") # can't rely on file names not having "." in them
                 simple_file = os.path.join(simple_cifs_dir, f'{file_name}.simp{file_ext}')
-                # simple_file = os.path.join(simple_pdbs_dir, file) 
                 if os.path.isfile(simple_file):
                     log.debug("Simple pdb file already exists")
                     pass
                 else:
-                    #remove_extra_ligs(supp_file, simple_file)
                     simplify_pdb(supp_file, simple_file, "mmcif")
         log.info("All structure domains have been simplified") # what we want to do here is seimply keep protein atoms for first chain, this is to make visualisation quicker and simpler
     
@@ -1410,7 +1379,6 @@ def main(args):
 
     for struc in supp_strucs: #fnames are now the files of the STAMPED PDB files, not the original ones
         struc_root, _ =  os.path.splitext(struc)
-        # struc_name = struc_root.split(".")[0]
         struc_name = struc_root.replace(".supp", "") # can't rely on file names not having "." in them
         struc_mapping_path = os.path.join(mappings_dir, "{}_mapping.csv".format(struc_name))
         pdb2up_mapping_dict_path = os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))
@@ -1429,8 +1397,6 @@ def main(args):
                 dump_pickle(up2pdb, up2pdb_mapping_dict_path)
                 log.info("Pseudo-mapping files for {} generated".format(struc_name))
         else:
-            # mapping = pd.read_csv(struc_mapping_path)
-            # mapping_dict = load_pickle(pdb2up_mapping_dict_path)
             log.debug("Mapping files for {} already exists".format(struc_root))
 
     log.info("UniProt mapping section completed")
@@ -1443,9 +1409,7 @@ def main(args):
 
         mapped_dssps = []
         for struc in fnames: #fnames are now the files of the STAMPED PDB files, not the original ones
-            ## DSSP
             struc_root, _ =  os.path.splitext(struc)
-            # struc_name = struc_root.split(".")[0]
             struc_name = struc_root.replace(".supp", "") # can't rely on file names not having "." in them
             dssp_csv = os.path.join(dssp_dir, "{}.csv".format(struc_name))
 
@@ -1462,16 +1426,7 @@ def main(args):
 
             dssp_data.PDB_ResNum = dssp_data.PDB_ResNum.astype(str)
             mapping.PDB_ResNum = mapping.PDB_ResNum.astype(str)
-
-            # print(mapping.head(3))
-            # print(mapping.columns.tolist())
-            # print(dssp_data.head(3))
-            # print(dssp_data.columns.tolist())
-
-            # print(mapping.columns.tolist())
-            # print(dssp_data.columns.tolist())
             mapping = pd.merge(mapping, dssp_data, left_on = "PDB_ResNum", right_on = "PDB_ResNum") # don't think this merging worked well
-            # print(mapping.columns.tolist())
 
             mapped_dssps.append(mapping)
 
@@ -1503,12 +1458,10 @@ def main(args):
             
         struc2ligs = {}
         lig_fps = {}
-        # no_mapping_pdbs = []
         fp_status = {}
 
         for struc in supp_strucs:
             struc_root, _ =  os.path.splitext(struc)
-            # struc_name = struc_root.split(".")[0]
             struc_name = struc_root.replace(".supp", "") # can't rely on file names not having "." in them
 
             struc2ligs[struc] = []
@@ -1516,17 +1469,6 @@ def main(args):
             struc_df = ligs_df.query('struc_name == @struc')
 
             struc_path = os.path.join(supp_cifs_dir, struc)
-            # pdb_path_root, _ =  os.path.splitext(pdb_path)
-
-            # pdb_df = PDBXreader(pdb_path).atoms(format_type = "pdb", excluded=())
-            # cif_out = os.path.join(supp_cifs_dir, "{}.cif".format(struc_root))
-
-            # pdb_df["label_alt_id"] = "."
-            # # cif_df["pdbx_PDB_ins_code"] = "?"
-            # pdb_df["pdbx_formal_charge"] = "?"
-
-            # w = PDBXwriter(outputfile = cif_out)
-            # w.run(pdb_df[cif_cols_order], format_type = "mmcif")
             
             if struc_df.empty:
                 fp_status[struc_root] = "No-Ligs"
@@ -1537,7 +1479,6 @@ def main(args):
 
             ligand_names = list(set([row.label_comp_id for _, row in struc_df.iterrows()]))
 
-            # arpeggio_default_json_name = os.path.basename(struc).split(".")[0]
             arpeggio_default_json_name = os.path.basename(struc_name)
             arpeggio_default_out = os.path.join(arpeggio_dir, f"{arpeggio_default_json_name}.json")  # this is how arpeggio names the file (splits by "." and takes the first part)
 
@@ -1595,7 +1536,6 @@ def main(args):
                     ###### CHECK IF LIGAND FINGERPRINT IS EMPTY ######
                     lig_rows.UniProt_ResNum_end = lig_rows.UniProt_ResNum_end.astype(int)
                     lig_fp = lig_rows.UniProt_ResNum_end.unique().tolist()
-                    # lig_key = "{}_".format(struc_root.split(".")[0]) + "_".join([str(l) for l in lig])
                     lig_key = "{}_".format(struc_name) + "_".join([str(l) for l in lig]) # can't rely on file names not having "." in them
                     
                     lig_fps[lig_key] = lig_fp
@@ -1794,9 +1734,7 @@ def main(args):
 
         example_struc = os.path.join(supp_cifs_dir, sorted([f for f in os.listdir(supp_cifs_dir) if f.endswith(".cif")])[0]) # first structure in the list, which is one with protein atoms on simple.
         struc_root, _ = os.path.splitext(os.path.basename(example_struc))
-        # struc_name = struc_root.split(".")[0]
         struc_name = struc_root.replace(".supp", "") # can't rely on file names not having "." in them
-        # print((mappings_dir, struc_name, os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name))), flush = True)
         struc_mapping = load_pickle(os.path.join(mappings_dir, "{}_pdb2up.pkl".format(struc_name)))
         fasta_path = os.path.join(varalign_dir, "{}.fa".format(input_id))
         fasta_root, _ = os.path.splitext(fasta_path)    
@@ -1838,8 +1776,6 @@ def main(args):
             example_struc_df = PDBXreader(example_struc).atoms(format_type = "mmcif", excluded=())
             chains = sorted(list(example_struc_df.auth_asym_id.unique())) ### TODO: we generate sequence only for the first chain. this means this will only work for MONOMERIC PROTEINS
             main_chain = chains[0]
-            # print((main_chain, struc_mapping), flush = True)
-            # log.info(main_chain, struc_mapping)
             pdb_resnums = list(struc_mapping[main_chain].keys())
             aln_info = varalign.alignments.alignment_info_table_FRAGSYS_CUSTOM(aln_obj, struc_mapping[main_chain]) ##### ADD PDB RESNUMS HERE OF STRUCTURE SEQUENCE
             aln_info.to_pickle(aln_info_path)
@@ -1870,8 +1806,8 @@ def main(args):
                 get_human_subset_msa(hits_aln_rf, human_hits_msa)
             else:
                 pass
-            ### copy ensemble SQLite to directory where this is being executed
-            cp_path = cp_sqlite(wd)
+           
+            cp_path = cp_sqlite(wd)  ### copy ensemble SQLite to directory where this is being executed
             log.debug("ENSEMBL_CACHE SQLite copied correctly")
 
             variant_table_path = os.path.join(varalign_dir, "{}_rf_human_variants.p.gz".format(input_id))
@@ -1887,8 +1823,8 @@ def main(args):
             else:
                 variants_table = pd.read_pickle(variant_table_path)
 
-            ### remove ensembl SQLite from directory where this is being executed
-            rm_sqlite(cp_path)
+            
+            rm_sqlite(cp_path) ### remove ensembl SQLite from directory where this is being executed
             log.debug("ENSEMBL_CACHE SQLite removed correctly")
 
             if variants_table.empty: # variant table is empty. E.g., P03915. Only 3 human sequences. They are all mitochondrial (not in gnomAD)
@@ -1943,16 +1879,12 @@ def main(args):
 
         shenkin_mapped_out = os.path.join(results_dir, "{}_ress_consvar.pkl".format(input_id))
         if OVERRIDE or not os.path.isfile(shenkin_mapped_out): # we leave it as OVERRIDE and not OVERRIDE_variants to fix the wrong pseudocounts
-            # print(list(set([seqid[0] for seqid in indexed_mapping_table.index.tolist()])))
             aln_ids = list(set([seqid[0] for seqid in indexed_mapping_table.index.tolist() if "query" in seqid[0]])) # THIS IS EMPTY IF QUERY SEQUENCE IS NOT FOUND
             n_aln_ids = len(aln_ids)
-            # print(aln_ids)
             if n_aln_ids != 1:
                 log.warning("There are {} sequences matching input protein accession".format(str(n_aln_ids)))
 
-            # print(shenkin_filt, indexed_mapping_table)
             mapped_data = merge_shenkin_df_and_mapping(shenkin_filt, indexed_mapping_table, aln_ids)
-            # print(mapped_data)
             mapped_data.to_pickle(shenkin_mapped_out)
         else:
             mapped_data = pd.read_pickle(shenkin_mapped_out)
@@ -2011,4 +1943,3 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args)
-
