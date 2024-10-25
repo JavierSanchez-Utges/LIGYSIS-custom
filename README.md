@@ -46,9 +46,80 @@ Other standard python libraries:
 - [Scikit-learn](https://scikit-learn.org/stable/) [(BSD 3-Clause License)](https://github.com/scikit-learn/scikit-learn/blob/main/COPYING)
 - [Tensorflow](https://www.tensorflow.org/) [(Apache v2.0 License)](https://github.com/tensorflow/tensorflow/blob/master/LICENSE)
 
-For more information on the dependencies, refere to the .yml files in the [`envs`](envs/) directory. To install all the dependencies, refer to the [installation manual](INSTALL.md).
+For more information on the dependencies, refer to the .yml files in the [`envs`](envs/) directory. To install all the dependencies, refer to the [installation manual](INSTALL.md).
 
-## Running LIGYSIS<sub>CUSTOM</sub>
+## Environments
+
+The envs folder contains three .yml files describing the necessary packages and dependencies for the different parts of the pipeline and analysis.
+  -  [arpeggio_env](envs/arpeggio_env.yml) contains Arpeggio. ???
+    
+  -  [deep_learning_env](envs/deep_learning_env.yml) contains the packages necessary to do predict the RSA Cluster labels and functional scores with [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py).
+    
+  -  [varalign_env](envs/varalign_env.yml) is needed to run **LIGYSIS<sub>CUSTOM</sub>**.
+
+## Installation
+
+For complete installation instructions refer [here](INSTALL.md).
+
+## Configuration
+
+The configuration file can be found [here](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/fragsys_config.txt). It includes the necessary paths to databases and binaries needed to run the pipeline. It looks like this:
+
+```
+### FRAGSYS CONFIG FILE ###
+
+[paths]
+
+## BINARIES
+
+dssp_bin = /path/to/miniconda/envs/msa/bin/mkdssp
+stamp_bin = /path/to/stamp/stamp.4.5/bin/linux/stamp
+transform_bin = /path/to/stamp/stamp.4.5/bin/linux/transform
+clean_pdb_python_bin = /path/to/miniconda/envs/arpeggio/bin/python
+clean_pdb_bin = /path/to/clean_pdb.py
+arpeggio_python_bin =/path/to/miniconda/envs/pdbe-arpeggio-env/bin/python
+arpeggio_bin = /path/to/miniconda/envs/pdbe-arpeggio-env/bin/pdbe-arpeggio
+
+## DATABASES
+
+ensembl_sqlite =/path/to/.varalign/ensembl_cache.sqlite              ### WHAT DO WE DO ABOUT THIS?
+gnomad_vcf =/path/to/gnomad/gnomad.exomes.r2.0.1.sites.vcf.gz
+swissprot = /path/to/swissprot.fasta
+
+## DIRECTORIES
+
+stampdir = /path/to/stamp/stamp.4.5/defs/
+
+### END OF CONFIG FILE ###
+```
+
+These are mock paths and need to be replaced with the right ones for the pipeline to run successfully.
+
+### Downloading SwissProt
+
+This is the database used for our analysis, but can be changed according to the user purposes, e.g. TrEMBL. What is important is to add the correct path in the [configuration file](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/fragsys_config.txt). To download SwissProt, follow the next steps.
+
+```sh
+# download SwissProt in fasta format (88MB)
+wget https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz
+
+# decrompress the file
+gzip -d uniprot_sprot.fasta.gz
+```
+
+### Downloading gnomAD v2.1
+
+This is the database used for our analysis, but can be changed according to the user purposes, e.g. v > 2.1. What is important is to add the correct path in the [configuration file](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/fragsys_config.txt). To download gnomAD v2.1, follow the next steps.
+```
+# download gnomAD Exomves vcf (large file 58GB)
+wget https://storage.googleapis.com/gcp-public-data--gnomad/release/2.1.1/vcf/exomes/gnomad.exomes.r2.1.1.sites.vcf.bgz
+```
+
+For more information, refer to [gnomAD](https://gnomad.broadinstitute.org/).
+
+After downloading gnomAD, it is required to run VEP on it, as VarAlign uses its annotations. Information on how to do so [here](https://www.ensembl.org/info/docs/tools/vep/script/vep_options.html).
+
+## Execution
 
 **LIGYSIS<sub>CUSTOM</sub>** can be run like this:
 
@@ -73,7 +144,7 @@ To carry out the last step and add the RSA-derived Cluster labels and functional
 python predict_rsa_labels.py Q9UGL1_cif
 ```
 
-This script only requires a single mandatory argument, which is `input_dir` the name of the input directory. From this `input_dir`, the programme will find the relevant files in the `./OUT` directory. In this example, it is `Q9UGL1_cif`.
+This script only requires a single mandatory argument, which is `input_dir` the name of the input directory. From this `input_dir`, the programme will find the relevant files in the `./OUT` directory. In this example, it is `Q9UGL1_cif`. This script will use a [multilayer perceptron model](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/RSA_pred_model.h5) [[6](https://www.nature.com/articles/s42003-024-05970-8)] to predict RSA-based Cluster labels and functional scores for each defined binding site. 
 
 ## Help and manual
 
