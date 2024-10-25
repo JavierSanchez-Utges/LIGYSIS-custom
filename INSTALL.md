@@ -5,7 +5,15 @@
 DSSP is incompatible with all other environments, and so must go on its environment of its own. You can install locally as well, all we will need is the location of the executable. The version of the libboost library must be specified to be this one, otherwise, dssp will not run.
 
 ```
-conda create -n dssp_env salilab::dssp=3.0.0 libboost=1.73.0
+conda create -n DSSP salilab::dssp=3.0.0 libboost=1.73.0
+```
+
+## Installation of HMMER
+
+Installing HMMER on its own environment. Just easier...
+
+```
+conda create -n HMMER hmmer=3.4
 ```
 
 ## Installation of STAMP
