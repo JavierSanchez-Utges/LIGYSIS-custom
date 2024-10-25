@@ -17,6 +17,9 @@ curl -O https://www.compbio.dundee.ac.uk/downloads/stamp/stamp.4.4.2.tar.gz
 
 # decompress STAMP
 tar -xzvf stamp.4.4.2.tar.gz
+
+# change directory
+cd stamp.4.4.2
 ```
 To install STAMP, run the BUILD script in this directory using:
 ```
