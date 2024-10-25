@@ -55,13 +55,29 @@ The first step to install **LIGYSIS<sub>CUSTOM</sub>** is to Git Clone the repos
 git clone -b revamped https://github.com/JavierSanchez-Utges/fragsys_custom.git
 ```
 
-The next step is to install the three Conda environments needed to run the pipeline and analyse the results. This can be done with Conda using the .yml files in the [`ENVS`](ENVS/) directory.
+### Installation of pdbe-arpeggio
 
 ```
 # change directory to environments directory
-cd fragsys_custom/ENVS
+cd fragsys_custom/ENV
 
-# install environments
+# install pdbe-arpeggio environment
+conda create -n ARPEGGIO python=3.9 gemmi openbabel biopython -c conda-forge
+
+# activating pdbe-arpeggio environment
+conda activate ARPEGGIO
+
+# install pdbe-arpeggio
+pip install pdbe-arpeggio 
+
+# test pdbe-arpeggio with help function
+pdbe-arpeggio -h
+```
+
+The next step is to install the three Conda environments needed to run the pipeline and analyse the results. This can be done with Conda using the .yml files in the [`ENVS`](ENVS/) directory.
+
+```
+# install other environments
 
 # install deep_learning environment
 conda env create -f deep_learning_env.yml
