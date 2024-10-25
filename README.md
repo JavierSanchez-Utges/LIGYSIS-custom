@@ -23,11 +23,9 @@ The pipeline can be summarised in the following steps:
 13. Missense enrichment score calculation with [VarAlign](https://github.com/bartongroup/SM_varalign) [[3](https://www.biorxiv.org/content/10.1101/127050v2), [4](https://onlinelibrary.wiley.com/doi/full/10.1002/pro.3783), [5](https://www.nature.com/articles/s42003-024-06117-5)].
 14. RSA-based clustering label and functional score calculation [[6](https://www.nature.com/articles/s42003-024-05970-8)].
 
-**Note:** this is done on a separate script: [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py), which requires a different environment due to dependencies crashing. This programme must be executed on the [`deep_learning_env`]() environment.
+**Note:** this is done on a separate script: [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py), which requires a different environment due to dependencies crashing. This programme must be executed on the `deep_learning_env` [environment]().
 
 The final output of the pipeline consists of multiple tables collating the results from the different steps of the analysis for each residue, and for the defined ligand binding sites. These data include relative solvent accessibility (RSA), secondary structure, PDB/UniProt residue number, alignment column, divergence score, missense enrichment score, p-value, etc.
-
-Refer to notebook [15](analysis/15_ML_predicting_rsa_labels.ipynb) to predict RSA cluster labels for your binding sites of interest.
 
 ## Dependencies
 Third party dependencies for these notebooks include:
@@ -58,6 +56,8 @@ For more information on the dependencies, refere to the .yml files in the [`envs
 python fragsys_custom.py IN/Q9UGL1_cif Q9UGL1 pdb
 ```
 
+This needs to be done within the `varalign-env-py3` [environment]().
+
 The programme uses relative paths, so it is recommended to run it in the repository directory, where it can directly read from `./IN` and write output to `./OUT` (you need to create this second directory).
 
 The programme has three mandatory arguments:
@@ -67,7 +67,7 @@ The programme has three mandatory arguments:
 
 - Finally, `struc_fmt`, indicating whether the structures are in `pdb` or `mmcif` format. Only these two formats are selected, and the programme will not run properly unless a structure format is required.
 
-To carry out the last step and add the RSA-derived Cluster labels and functional scores, the [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py) needs to be executed on the [`deep_learning_env`]() environment. This is how to run it:
+To carry out the last step and add the RSA-derived Cluster labels and functional scores, the [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py) needs to be executed on the `deep_learning_env` [environment](). This is how to run it:
 
 ```sh
 python predict_rsa_labels.py Q9UGL1_cif
@@ -132,7 +132,17 @@ python predict_rsa_labels.py -h
 which will print the manual of the programme:
 
 ```
-XXX
+usage: predict_rsa_labels.py [-h] input_id
+
+This script predicts RSA cluster labels and calculates RSA-based functional
+score (FS)
+
+positional arguments:
+  input_dir    This is the Input ID, Job ID or input directory, i.e..
+              name of the directory where the binding site table resides.
+
+options:
+  -h, --help  show this help message and exit
 ```
 
 ### Optional command line arguments
