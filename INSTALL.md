@@ -17,6 +17,7 @@ conda create -n HMMER hmmer=3.4
 ```
 
 ## Installation of STAMP
+
 The following instructions are to install STAMP. For more information refer to the [STAMP installation instructions](https://www.compbio.dundee.ac.uk/downloads/stamp/INSTALL).
 
 ```
@@ -57,10 +58,9 @@ git clone -b revamped https://github.com/JavierSanchez-Utges/fragsys_custom.git
 
 ### Installation of pdbe-arpeggio
 
-```
-# change directory to environments directory
-cd fragsys_custom/ENV
+The following commands will crate an environment and install pdbe-arpeggio.
 
+```
 # install pdbe-arpeggio environment
 conda create -n ARPEGGIO python=3.9 gemmi openbabel biopython -c conda-forge
 
@@ -74,25 +74,14 @@ pip install pdbe-arpeggio
 pdbe-arpeggio -h
 ```
 
-The next step is to install the three Conda environments needed to run the pipeline and analyse the results. This can be done with Conda using the .yml files in the [`ENVS`](ENVS/) directory.
+### Installation of deep learning environment
 
 ```
-# install other environments
+# change directory to environments directory
+cd fragsys_custom/ENVS
 
 # install deep_learning environment
-conda env create -f deep_learning_env.yml
-
-# install arpeggio environment
-conda create -n arpeggio-env python=3.9 gemmi openbabel biopython -c conda-forge
-
-# activating arpeggio environment
-conda activate arpeggio-env
-
-# install pdbe-arpeggio
-pip install pdbe-arpeggio 
-
-# test pdbe-arpeggio with help function
-pdbe-arpeggio -h
+conda env create -f DEEP_LEARNING.yaml
 ```
 
 ## Installation of VarAlign
@@ -100,11 +89,8 @@ pdbe-arpeggio -h
 The following instructions are to install VarAlign. Fore more information refer to the [VarAlign repository](https://github.com/bartongroup/SM_VarAlign/tree/JSU_branch).
 
 ```
-# change directory to FRAGSYS envs directory
-cd ../fragsys_custom/ENVS/
-
-# install varalign environment
-conda env create -f varalign_env.yml
+# install VarAlign environment
+conda env create -f VARALIGN.yaml
 
 # VarAlign installation (Grabbed from URL)
 
@@ -118,7 +104,7 @@ git clone -b JSU_branch https://github.com/bartongroup/SM_VarAlign.git
 cd SM_VarAlign
 
 # activate varalign_env environment
-conda activate varalign_env
+conda activate VARALIGN
 
 # install VarAlign
 pip install .
