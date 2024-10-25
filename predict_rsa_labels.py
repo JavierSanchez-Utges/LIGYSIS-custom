@@ -47,17 +47,17 @@ def get_RSA_vectors(rsa_profs_filt):
 
 ###### MAIN FUNCTION
 
-def main(input_id):
+def main(input_dir):
     """
     This function will add RSA Cluster labels and RSA-based functional scores
     to a summary binding site table dataframe.
     """
-    results_dir = f'./OUT/{input_id}/results' ### TODO: THIS PATH NEEDS TO BE CHANGED TO WHEREVER USER RESULTS WILL GO
-    bss_data_out = os.path.join(results_dir, f'{input_id}_bss_table.pkl')
-    bss_data_out_RSA = os.path.join(results_dir, f'{input_id}_bss_RSA_table.pkl')
-    rsa_profs_out = os.path.join(results_dir, f'{input_id}_bss_RSA_profiles.pkl')
+    results_dir = f'./OUT/{input_dir}/results'
+    bss_data_out = os.path.join(results_dir, f'{input_dir}_bss_table.pkl')
+    bss_data_out_RSA = os.path.join(results_dir, f'{input_dir}_bss_RSA_table.pkl')
+    rsa_profs_out = os.path.join(results_dir, f'{input_dir}_bss_RSA_profiles.pkl')
 
-    model_path = "/homes/2394007/JSU_LIGYSIS/ANN_results/diff_seeds/85406/models/85406_4_model_epoch_75_train_acc_0.88.h5" ### TODO: THIS MIGHT NEED TO BE MOVED FOR ACCESS
+    model_path = "./RSA_pred_model.h5"
 
     # Load data
     bss_data = pd.read_pickle(bss_data_out)
@@ -96,8 +96,8 @@ def main(input_id):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='This script predicts RSA cluster labels and calculates RSA-based functional score (FS)')
-    parser.add_argument('input_id', type=str, help='This is the Input ID or Job ID, i.e., name of the directory where the binding site table resides.')
+    parser.add_argument('input_dir', type=str, help='This is the Input ID or Job ID, i.e., name of the directory where the binding site table resides.')
     args = parser.parse_args()
 
-    main(args.input_id)
+    main(args.input_dir)
 
