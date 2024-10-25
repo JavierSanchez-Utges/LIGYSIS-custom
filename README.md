@@ -46,7 +46,7 @@ Other standard python libraries:
 - [Scikit-learn](https://scikit-learn.org/stable/) [(BSD 3-Clause License)](https://github.com/scikit-learn/scikit-learn/blob/main/COPYING)
 - [Tensorflow](https://www.tensorflow.org/) [(Apache v2.0 License)](https://github.com/tensorflow/tensorflow/blob/master/LICENSE)
 
-For more information on the dependencies, refer to the .yml files in the [`envs`](envs/) directory. To install all the dependencies, refer to the [installation manual](INSTALL.md).
+For more information on the dependencies, refer to the .yml files in the [`ENVS`](ENVS/) directory. To install all the dependencies, refer to the [installation manual](INSTALL.md).
 
 ## Environments
 
