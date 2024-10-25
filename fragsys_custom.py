@@ -1146,7 +1146,8 @@ def main(args):
     ### SETTING UP DIRECTORIES
 
     input_id = os.path.normpath(input_dir).split(os.sep)[-1]
-    output_dir = os.path.join(wd, "OUT", input_id)
+    main_output_dir = os.path.join(wd, "OUT")
+    output_dir = os.path.join(main_output_dir, input_id)
     results_dir = os.path.join(output_dir, "results")
     raw_pdbs_dir = os.path.join(output_dir, "raw_pdbs")
     raw_cifs_dir = os.path.join(output_dir, "raw_cifs")
@@ -1162,7 +1163,7 @@ def main(args):
     varalign_dir = os.path.join(output_dir, "varalign")
     
     dirs = [
-        output_dir, results_dir,
+        main_output_dir, output_dir, results_dir,
         raw_pdbs_dir, raw_cifs_dir,
         clean_pdbs_dir, stamp_out_dir,
         supp_pdbs_dir, supp_cifs_dir,
