@@ -50,11 +50,13 @@ For more information on the dependencies, refere to the .yml files in the [`envs
 
 ## Running LIGYSIS<sub>CUSTOM</sub>
 
-This is a command line programme, which can be executed like this:
+**LIGYSIS<sub>CUSTOM</sub>** can be run like this:
 
 ```sh
 python fragsys_custom.py IN/Q9UGL1_cif Q9UGL1 pdb
 ```
+
+The programme uses relative paths, so it is recommended to run it in the repository directory, where it can directly read from `./IN` and write output to `./OUT` (you need to create this second directory).
 
 The programme has three mandatory arguments:
 - `input_dir` is the input directory containing the set of structures to be analysed in either [PDB](https://www.wwpdb.org/documentation/file-format) (<i>.pdb</i>, <i>.ent</i>) or [mmCIF](https://pdb101.rcsb.org/learn/guide-to-understanding-pdb-data/beginner%E2%80%99s-guide-to-pdbx-mmcif) (<i>.cif</i>) formats. In this example:`IN/Q9UGL1_cif`.
@@ -110,6 +112,26 @@ optional arguments:
   --mes_thresh MES_THRESH
                         MES threshold (default: 1.0)
 ```
+
+### Optional command line arguments
+
+- `--clust_method` is the clustering algorithm employed to cluster the ligands into binding sites. Average linkage clustering, `average`, is used by default. For other methods, check `scipy.cluster.hierarchy` documentation [here](https://docs.scipy.org/doc/scipy/reference/cluster.hierarchy.html).
+
+- `--clust_dist` is the distance thredhold at which the clustering tree or dendrogram is cut to obtain ligand clusters or ligand binding sites. The threshold value is `0.5` by default, i.e., on average the ligands within a cluster share half of their binding residues.
+
+- `--hmm_iters` is the number of iterations for the MSA build using `jackHMMER`, default is `3`. More iterations will retrieve more remote homologues, sequences with an evolutionary link further away in time (less sequence similarity).
+
+- `--cons_thresh_low` and `--cons_thresh_high` are the thresholds employed for the Normalised Shenkin divergence score [[2](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1009335), [6](https://www.nature.com/articles/s42003-024-05970-8)], ranging 0-100, to determine the classes of <i>conserved</i> and <i>unconserved</i>. Default values are `25` and `75`, so only columns presenting ≤ 25% of the maximum divergence will be classified as <i>conserved</i> and columns with a divergence ≥75% as <i>unconserved</i> or <i>divergent</i>.
+
+- `--mesh_thresh` is the threshold employed to classify columns into <i>enriched</i> or <i>depleted</i> in human missense variation, relative to the average of the other columns. The missense enrichment score, MES, is an odds ratio [[2](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1009335), [3](https://www.biorxiv.org/content/10.1101/127050v2), [5](https://www.nature.com/articles/s42003-024-06117-5)], so values > 1 indicate enrichment and < 1 depletion. A values of 1 represents average variation or neutrality within a column. Default threshold is `1.0`.
+
+## Citation
+
+If you use this pipeline, please cite:
+
+**Utgés JS**, MacGowan SA, Ives CM, Barton GJ. Classification of likely functional class for ligand binding sites identified from fragment screening. Commun Biol. 2024 Mar 13;7(1):320. doi: [10.1038/s42003-024-05970-8](https://www.nature.com/articles/s42003-024-05970-8). PMID: 38480979; PMCID: PMC10937669.
+
+**Utgés JS** & Barton GJ. Comparative evaluation of methods for the prediction of protein-ligand binding sites, 08 August 2024, PREPRINT (Version 1) available at Research Square [https://doi.org/10.21203/rs.3.rs-4849153/v1](https://doi.org/10.21203/rs.3.rs-4849153/v1)
 
 ## References
 1. Shenkin PS, Erman B, Mastrandrea LD. Information-theoretical entropy as a measure of sequence variability.
