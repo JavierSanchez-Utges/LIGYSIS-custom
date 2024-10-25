@@ -1,7 +1,6 @@
 ### IMPORTS ###
 
 import os
-import re
 import Bio
 import sys
 import math
@@ -12,15 +11,11 @@ import logging
 import requests
 import argparse
 import Bio.SeqIO
-import importlib
 import prointvar
-import statistics
-import subprocess
 import Bio.AlignIO
 import numpy as np
 import configparser
 import pandas as pd
-import seaborn as sns
 from Bio.Seq import Seq
 from Bio import SeqUtils
 from Bio import pairwise2
@@ -28,17 +23,10 @@ from scipy import cluster
 import varalign.alignments
 import scipy.stats as stats
 import varalign.align_variants
-import matplotlib.pyplot as plt
 from prointvar.pdbx import PDBXreader
 from prointvar.pdbx import PDBXwriter
-import matplotlib.patches as mpatches
-from prointvar.sifts import SIFTSreader
-from Bio.PDB.MMCIF2Dict import MMCIF2Dict
-from prointvar.config import config as cfg
 from prointvar.dssp import DSSPrunner, DSSPreader
-from scipy.spatial.distance import squareform, pdist
-from prointvar.fetchers import download_sifts_from_ebi
-from prointvar.fetchers import download_structure_from_pdbe
+from scipy.spatial.distance import squareform
 
 ## UTILITIES
 
@@ -584,30 +572,6 @@ def get_labs(fingerprints_dict):
     Returns all ligand labels from fingerprints dict.
     """
     return [k for k in fingerprints_dict.keys()]
-
-# def generate_dictionary(mmcif_file):
-#     """
-#     Generates coordinate dictionary from a mmCIF file.
-#     """
-#     # Parse the mmCIF file
-#     mmcif_dict = MMCIF2Dict(mmcif_file)
-
-#     # Initialise the result dictionary
-#     result = {}
-
-#     # Iterate through the atoms and populate the dictionary
-#     for i, auth_asym_id in enumerate(mmcif_dict["_atom_site.auth_asym_id"]):
-#         label_comp_id_end = mmcif_dict["_atom_site.label_comp_id"][i]
-#         auth_seq_id = mmcif_dict["_atom_site.auth_seq_id"][i]
-#         auth_atom_id_end = mmcif_dict["_atom_site.auth_atom_id"][i]
-#         x = mmcif_dict["_atom_site.Cartn_x"][i]
-#         y = mmcif_dict["_atom_site.Cartn_y"][i]
-#         z = mmcif_dict["_atom_site.Cartn_z"][i]
-
-#         # Dictionary creation
-#         result[auth_asym_id, label_comp_id_end, auth_seq_id, auth_atom_id_end] = [x, y, z]
-
-    return result
 
 ## mmcif dict with ProIntVar
 
