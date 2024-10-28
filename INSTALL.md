@@ -1,5 +1,7 @@
 # Installation
 
+These are the complete full instructions to install **LIGYSIS** from scratch.
+
 ## Installation of DSSP
 
 DSSP is incompatible with all other environments, and so must go on its environment of its own. You can install locally as well, all we will need is the location of the executable. The version of the libboost library must be specified to be this one, otherwise, dssp will not run.
@@ -47,13 +49,13 @@ The executables will be installed in bin/\<system-type\>/.
 
 For more information refer to the [STAMP manual](https://www.compbio.dundee.ac.uk/manuals/stamp.4.4/stamp.html)
 
-## Installation of LIGYSIS<sub>CUSTOM</sub>
+## Installation of LIGYSIS
 
-The first step to install **LIGYSIS<sub>CUSTOM</sub>** is to Git Clone the repository.
+The first step to install **LIGYSIS** is to Git Clone the repository.
 
 ```
 # git clone LIGYSIS from repository
-git clone -b revamped https://github.com/JavierSanchez-Utges/fragsys_custom.git
+git clone -b revamped https://github.com/JavierSanchez-Utges/ligysis_custom.git
 ```
 
 ### Installation of pdbe-arpeggio
@@ -68,20 +70,20 @@ conda create -n ARPEGGIO python=3.9 gemmi openbabel biopython -c conda-forge
 conda activate ARPEGGIO
 
 # install pdbe-arpeggio
-pip install pdbe-arpeggio 
+pip install pdbe-arpeggio
 
 # test pdbe-arpeggio with help function
 pdbe-arpeggio -h
 ```
 
-### Installation of deep learning environment
+### Installation of DEEP_LEARNING environment
 
 ```
 # change directory to environments directory
-cd fragsys_custom/ENVS
+cd ligysis_custom/ENVS
 
 # install deep_learning environment
-conda env create -f DEEP_LEARNING.yaml
+conda env create -f DEEP_LEARNING.yml
 ```
 
 ## Installation of VarAlign
@@ -89,8 +91,8 @@ conda env create -f DEEP_LEARNING.yaml
 The following instructions are to install VarAlign. Fore more information refer to the [VarAlign repository](https://github.com/bartongroup/SM_VarAlign/tree/JSU_branch).
 
 ```
-# install VarAlign environment
-conda env create -f VARALIGN.yaml
+# install LIGYSIS environment
+conda env create -f LIGYSIS.yml
 
 # VarAlign installation (Grabbed from URL)
 
@@ -104,7 +106,7 @@ git clone -b JSU_branch https://github.com/bartongroup/SM_VarAlign.git
 cd SM_VarAlign
 
 # activate varalign_env environment
-conda activate VARALIGN
+conda activate LIGYSIS
 
 # install VarAlign
 pip install .
@@ -133,3 +135,85 @@ pip install -r requirements.txt
 python setup.py install
 ```
 
+## Configuration of ProIntVar
+
+ProIntVar needs to be configured in order to run DSSP. The path to the DSSP binary must be added.
+
+```
+# change directory to VarAlign directory
+cd ../SM_VarAlign
+
+# set up ProIntVar configuration
+ProIntVar-config-setup new_config.ini
+
+# edit the following values in new_config.ini
+dssp_bin = /path/to/anaconda/envs/bin/mkdssp
+
+# Update the settings according to user preferences and push them
+ProIntVar-config-load new_config.ini
+```
+
+## Configuration of LIGYSIS
+
+The configuration file can be found [here](ligysis_config.txt). It includes the necessary paths to databases and binaries needed to run the pipeline. It looks like this:
+
+```
+### LIGYSIS CONFIG FILE ###
+
+[paths]
+
+## BINARIES
+
+stamp_bin = /path/to/stamp/stamp.4.4.2/bin/linux/stamp
+transform_bin = /path/to/stamp/stamp.4.4.2/bin/linux/transform
+clean_pdb_python_bin = /path/to/miniconda/envs/arpeggio/bin/python
+clean_pdb_bin = /path/to/clean_pdb.py
+arpeggio_python_bin =/path/to/miniconda/envs/pdbe-arpeggio-env/bin/python
+arpeggio_bin = /path/to/miniconda/envs/pdbe-arpeggio-env/bin/pdbe-arpeggio
+
+## DATABASES
+
+ensembl_sqlite =/path/to/.varalign/ensembl_cache.sqlite              ### WHAT DO WE DO ABOUT THIS?
+gnomad_vcf =/path/to/gnomad/gnomad.exomes.r2.0.1.sites.vcf.gz
+swissprot = /path/to/swissprot.fasta
+
+## DIRECTORIES
+
+stampdir = /path/to/stamp/stamp.4.4.2/defs/
+
+### END OF CONFIG FILE ###
+```
+
+These are mock paths and need to be replaced with the right ones for the pipeline to run successfully.
+
+## Patching pdbe-arpeggio
+
+It is necessary to apply patch to pdbe-arpeggio. pdbe-arpeggio crashes when CIF files do not present the `_chem_comp.` fields. See GitHub issue [here](https://github.com/PDBeurope/arpeggio/issues/20). This will be the case for all the preferred biological assemblies in the PDBe. [This patch](JSU_patch.diff) is a quick solve for this until the issue is appropriately approached. It simply comments the lines that extract the `_chem_comp.` information, which is not needed in LIGYSIS.
+
+This is how the patch is applied:
+
+```sh
+# change directory to where pdbe-arpeggio is installed
+cd /path/to/environments/ARPEGGIO/lib/python3.9/site-packages/
+
+# apply patch
+git apply /path/to/LIGYSIS/JSU_patch.diff
+```
+
+This should have commented these 7 lines of code in the `arpeggio/core/interactions.py` file.
+
+```
++        # self.component_types = protein_reader.get_component_types(filename)
+
++        # result_entry['bgn']['label_comp_type'] = self.component_types[utils.get_residue_name(contact.bgn_atom)]
+
++        # result_entry['end']['label_comp_type'] = self.component_types[utils.get_residue_name(contact.end_atom)]
+
++        # result_entry['bgn']['label_comp_type'] = self.component_types[utils.get_residue_name(contact.bgn_res)]
+
++        # result_entry['end']['label_comp_type'] = self.component_types[utils.get_residue_name(contact.end_res)]
+
++        # result_entry['bgn']['label_comp_type'] = self.component_types[utils.get_residue_name(contact.bgn_atom)]
+
++        # result_entry['end']['label_comp_type'] = self.component_types[utils.get_residue_name(contact.end_res)]
+```
