@@ -8,8 +8,8 @@ import scipy
 import pickle
 import shutil
 import logging
-import requests
 import argparse
+import requests
 import Bio.SeqIO
 import prointvar
 import Bio.AlignIO
@@ -25,8 +25,9 @@ import scipy.stats as stats
 import varalign.align_variants
 from prointvar.pdbx import PDBXreader
 from prointvar.pdbx import PDBXwriter
-from prointvar.dssp import DSSPrunner, DSSPreader
 from scipy.spatial.distance import squareform
+from prointvar.dssp import DSSPrunner, DSSPreader
+
 
 ## UTILITIES
 
@@ -131,9 +132,8 @@ wd = os.getcwd()
 ### CONFIG FILE READING AND VARIABLE SAVING
 
 config = configparser.ConfigParser()
-config.read("fragsys_config.txt")
+config.read("ligysis_config.txt")
 
-dssp_bin = config["paths"].get("dssp_bin")
 stamp_bin = config["paths"].get("stamp_bin")
 transform_bin = config["paths"].get("transform_bin")
 clean_pdb_python_bin = config["paths"].get("clean_pdb_python_bin")
@@ -1110,9 +1110,9 @@ def get_bss_table(results_df):
 
 ### SETTING UP LOG
 
-logging.basicConfig(filename = "fragsys_REVAMPED.log", format = '%(asctime)s %(name)s [%(levelname)-8s] - %(message)s', level = logging.INFO)
+logging.basicConfig(filename = "LIGYSIS.log", format = '%(asctime)s %(name)s [%(levelname)-8s] - %(message)s', level = logging.INFO)
 
-log = logging.getLogger("FRAGSYS_REVAMPED")
+log = logging.getLogger("LIGYSIS")
 
 ### MAIN FUNCTION
 
@@ -1927,7 +1927,7 @@ def main(args):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description="Clusters ligands, defines, and characterises binding sites.")
+    parser = argparse.ArgumentParser(description="LIGYSIS: a ligand binding site analysis pipeline that clusters ligands, defines, and characterises binding sites.")
     parser.add_argument("input_dir", type=str, help="Path to directory containing input structures")
     parser.add_argument("uniprot_id", type=str, help="UniProt ID of the protein")
     parser.add_argument("struc_fmt", type=str, choices=["pdb", "mmcif"], default="mmcif", help="Format of the input structures (must be 'pdb' or 'mmcif')")

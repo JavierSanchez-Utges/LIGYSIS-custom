@@ -1,10 +1,9 @@
-### FRAGSYS CONFIG FILE ###
+### LIGYSIS CONFIG FILE ###
 
 [paths]
 
 ## BINARIES
 
-dssp_bin = /cluster/gjb_lab/2394007/miniconda/envs/msa/bin/mkdssp
 stamp_bin = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/bin/linux/stamp
 transform_bin = /cluster/gjb_lab/2394007/stamp_new/stamp.4.5/bin/linux/transform
 clean_pdb_python_bin = /cluster/gjb_lab/2394007/miniconda/envs/arpeggio/bin/python
