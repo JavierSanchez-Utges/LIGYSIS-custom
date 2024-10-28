@@ -1,6 +1,6 @@
 # LIGYSIS pipeline for user job submission
 
-This repository contains a customised version of our original ligand site analysis [**LIGYSIS**](https://github.com/JavierSanchez-Utges/ligysis_dev) pipeline, **LIGYSIS<sub>CUSTOM</sub>**, used for the analysis of protein-ligand complexes submitted to our **LIGYSIS** web server found [here](https://www.compbio.dundee.ac.uk/ligysis/). The code for the web server can be found [here](https://github.com/JavierSanchez-Utges/ligysis_flask).
+This repository contains a customised version of our original ligand site analysis [**LIGYSIS**](https://github.com/JavierSanchez-Utges/ligysis_dev) pipeline, used for the analysis of protein-ligand complexes submitted to our **LIGYSIS** web server found [here](https://www.compbio.dundee.ac.uk/ligysis/). The code for the web server can be found [here](https://github.com/JavierSanchez-Utges/ligysis_flask).
 
 ## Pipeline methodology
 
@@ -23,7 +23,7 @@ The pipeline can be summarised in the following steps:
 13. Missense enrichment score calculation with [VarAlign](https://github.com/bartongroup/SM_varalign) [[3](https://www.biorxiv.org/content/10.1101/127050v2), [4](https://onlinelibrary.wiley.com/doi/full/10.1002/pro.3783), [5](https://www.nature.com/articles/s42003-024-06117-5)].
 14. RSA-based clustering label and functional score calculation [[6](https://www.nature.com/articles/s42003-024-05970-8)].
 
-**Note:** this is done on a separate script: [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/ligysis_custom/blob/revamped/predict_rsa_labels.py), which requires a different environment due to dependencies crashing. This programme must be executed on the `DEEP_LEAERNING` [environment](https://github.com/JavierSanchez-Utges/ligysis_custom/blob/revamped/ENVS/DEEP_LEARNING.yml).
+**Note:** this is done on a separate script: [predict_rsa_labels.py](predict_rsa_labels.py), which requires a different environment due to dependencies crashing. This programme must be executed on the `DEEP_LEAERNING` [environment](ENVS/DEEP_LEARNING.yml).
 
 The final output of the pipeline consists of multiple tables collating the results from the different steps of the analysis for each residue, and for the defined ligand binding sites. These data include relative solvent accessibility (RSA), secondary structure, PDB/UniProt residue number, alignment column, divergence score, missense enrichment score, p-value, etc.
 
@@ -51,11 +51,11 @@ For more information on the dependencies, refer to the .yml files in the [`ENVS`
 ## Environments
 
 The `ENVS` folder contains three `.yml` files describing the necessary packages and dependencies for the different parts of the pipeline and analysis.
-  -  [arpeggio_env](envs/arpeggio_env.yml) contains Arpeggio. ???
-    
-  -  [DEEP_LEARNING](ENVS/DEEP_LEARNING.yml) contains the packages necessary to do predict the RSA Cluster labels and functional scores with [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py).
-    
   -  [LIGYSIS](ENVS/LIGYSIS.yml) is needed to run **LIGYSIS**.
+    
+  -  [DEEP_LEARNING](ENVS/DEEP_LEARNING.yml) contains the packages necessary to do predict the RSA Cluster labels and functional scores with [predict_rsa_labels.py](predict_rsa_labels.py).
+    
+  -  [arpeggio_env](envs/arpeggio_env.yml) contains Arpeggio. ???
 
 Note that there are no `.yml` files for the `DSSP`, `HMMER` and `ARPEGGIO` environments, as these are created from the command line without the need of a `.yml` file.
 
@@ -63,43 +63,9 @@ Note that there are no `.yml` files for the `DSSP`, `HMMER` and `ARPEGGIO` envir
 
 For complete installation instructions refer [here](INSTALL.md).
 
-## Configuration
-
-The configuration file can be found [here](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/fragsys_config.txt). It includes the necessary paths to databases and binaries needed to run the pipeline. It looks like this:
-
-```
-### FRAGSYS CONFIG FILE ###
-
-[paths]
-
-## BINARIES
-
-dssp_bin = /path/to/miniconda/envs/msa/bin/mkdssp
-stamp_bin = /path/to/stamp/stamp.4.5/bin/linux/stamp
-transform_bin = /path/to/stamp/stamp.4.5/bin/linux/transform
-clean_pdb_python_bin = /path/to/miniconda/envs/arpeggio/bin/python
-clean_pdb_bin = /path/to/clean_pdb.py
-arpeggio_python_bin =/path/to/miniconda/envs/pdbe-arpeggio-env/bin/python
-arpeggio_bin = /path/to/miniconda/envs/pdbe-arpeggio-env/bin/pdbe-arpeggio
-
-## DATABASES
-
-ensembl_sqlite =/path/to/.varalign/ensembl_cache.sqlite              ### WHAT DO WE DO ABOUT THIS?
-gnomad_vcf =/path/to/gnomad/gnomad.exomes.r2.0.1.sites.vcf.gz
-swissprot = /path/to/swissprot.fasta
-
-## DIRECTORIES
-
-stampdir = /path/to/stamp/stamp.4.5/defs/
-
-### END OF CONFIG FILE ###
-```
-
-These are mock paths and need to be replaced with the right ones for the pipeline to run successfully.
-
 ### Downloading SwissProt
 
-This is the database used for our analysis, but can be changed according to the user purposes, e.g. TrEMBL. What is important is to add the correct path in the [configuration file](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/fragsys_config.txt). To download SwissProt, follow the next steps.
+This is the database used for our analysis, but can be changed according to the user purposes, e.g. TrEMBL. What is important is to add the correct path in the [configuration file](ligysis_config.txt). To download SwissProt, follow the next steps.
 
 ```sh
 # download SwissProt in fasta format (88MB)
@@ -111,7 +77,7 @@ gzip -d uniprot_sprot.fasta.gz
 
 ### Downloading gnomAD v2.1
 
-This is the database used for our analysis, but can be changed according to the user purposes, e.g. v > 2.1. What is important is to add the correct path in the [configuration file](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/fragsys_config.txt). To download gnomAD v2.1, follow the next steps.
+This is the database used for our analysis, but can be changed according to the user purposes, e.g. v > 2.1. What is important is to add the correct path in the [configuration file](ligysis_config.txt). To download gnomAD v2.1, follow the next steps.
 ```
 # download gnomAD Exomves vcf (large file 58GB)
 wget https://storage.googleapis.com/gcp-public-data--gnomad/release/2.1.1/vcf/exomes/gnomad.exomes.r2.1.1.sites.vcf.bgz
@@ -140,17 +106,17 @@ The programme has three mandatory arguments:
 
 - Finally, `struc_fmt`, indicating whether the structures are in `pdb` or `mmcif` format. Only these two formats are selected, and the programme will not run properly unless a structure format is required.
 
-To carry out the last step and add the RSA-derived Cluster labels and functional scores, the [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py) needs to be executed on the `deep_learning_env` [environment](). This is how to run it:
+To carry out the last step and add the RSA-derived Cluster labels and functional scores, the [predict_rsa_labels.py](predict_rsa_labels.py) needs to be executed on the `DEEP_LEARNING` [environment](ENVS/DEEP_LEARNING.yml). This is how to run it:
 
 ```sh
 python predict_rsa_labels.py Q9UGL1_cif
 ```
 
-This script only requires a single mandatory argument, which is `input_dir` the name of the input directory. From this `input_dir`, the programme will find the relevant files in the `./OUT` directory. In this example, it is `Q9UGL1_cif`. This script will use a [multilayer perceptron model](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/RSA_pred_model.h5) [[6](https://www.nature.com/articles/s42003-024-05970-8)] to predict RSA-based Cluster labels and functional scores for each defined binding site. 
+This script only requires a single mandatory argument, which is `input_dir` the name of the input directory. From this `input_dir`, the programme will find the relevant files in the `./OUT` directory. In this example, it is `Q9UGL1_cif`. This script will use a [multilayer perceptron model](RSA_pred_model.h5) [[6](https://www.nature.com/articles/s42003-024-05970-8)] to predict RSA-based Cluster labels and functional scores for each defined binding site. 
 
 ## Help and manual
 
-To get help or information about the **LIGYSIS<sub>CUSTOM</sub>** pipeline, run:
+To get help or information about the **LIGYSIS** pipeline, run:
 
 ```sh
 python ligysis_custom.py -h
@@ -167,7 +133,8 @@ usage: ligysis_custom.py [-h] [--override] [--override_variants] [--variants]
                          [--mes_thresh MES_THRESH]
                          input_dir uniprot_id {pdb,mmcif}
 
-Clusters ligands, defines, and characterises binding sites.
+LIGYSIS: a ligand binding site analysis pipeline that clusters ligands,
+defines, and characterises binding sites.
 
 positional arguments:
   input_dir             Path to directory containing input structures
@@ -232,7 +199,7 @@ options:
 
 ## Citation
 
-If you use this pipeline, please cite:
+If you use **LIGYSIS** pipeline, please cite:
 
 **Utgés JS**, MacGowan SA, Ives CM, Barton GJ. Classification of likely functional class for ligand binding sites identified from fragment screening. Commun Biol. 2024 Mar 13;7(1):320. doi: [10.1038/s42003-024-05970-8](https://www.nature.com/articles/s42003-024-05970-8). PMID: 38480979; PMCID: PMC10937669.
 
