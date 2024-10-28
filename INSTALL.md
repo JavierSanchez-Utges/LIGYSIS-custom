@@ -174,7 +174,7 @@ The configuration file can be found [here](ligysis_config.txt). It includes the 
 stamp_bin = /path/to/stamp.4.4.2/bin/linux/stamp
 transform_bin = /path/to/stamp.4.4.2/bin/linux/transform
 clean_pdb_python_bin = /path/to/miniconda/envs/CLEAN_PDB/bin/python
-clean_pdb_bin = /path/to/clean_pdb.py
+clean_pdb_bin = ./clean_pdb.py
 arpeggio_python_bin =/path/to/miniconda/envs/ARPEGGIO/bin/python
 arpeggio_bin = /path/to/miniconda/envs/ARPEGGIO/bin/pdbe-arpeggio
 
@@ -195,7 +195,7 @@ These are mock paths and need to be replaced with the right ones for the pipelin
 
 ## Patching pdbe-arpeggio
 
-It is necessary to apply patch to pdbe-arpeggio. pdbe-arpeggio crashes when CIF files do not present the `_chem_comp.` fields. See GitHub issue [here](https://github.com/PDBeurope/arpeggio/issues/20). This will be the case for all the preferred biological assemblies in the PDBe. [This patch](JSU_patch.diff) is a quick solve for this until the issue is appropriately approached. It simply comments the lines that extract the `_chem_comp.` information, which is not needed in LIGYSIS.
+It is necessary to apply patch to pdbe-arpeggio. pdbe-arpeggio crashes when CIF files do not present the `_chem_comp.` fields. See GitHub issue [here](https://github.com/PDBeurope/arpeggio/issues/20). This will be the case for all the preferred biological assemblies in the PDBe. [This patch](OTHER/JSU_patch.diff) is a quick solve for this until the issue is appropriately approached. It simply comments the lines that extract the `_chem_comp.` information, which is not needed in LIGYSIS.
 
 This is how the patch is applied:
 
@@ -204,7 +204,7 @@ This is how the patch is applied:
 cd /path/to/environments/ARPEGGIO/lib/python3.9/site-packages/
 
 # apply patch
-git apply /path/to/LIGYSIS/JSU_patch.diff
+git apply /path/to/ligysis_custom/OTHER/JSU_patch.diff
 ```
 
 This should have commented these 7 lines of code in the `arpeggio/core/interactions.py` file.
