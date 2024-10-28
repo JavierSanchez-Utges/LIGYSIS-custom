@@ -57,7 +57,7 @@ def main(input_dir):
     bss_data_out_RSA = os.path.join(results_dir, f'{input_dir}_bss_RSA_table.pkl')
     rsa_profs_out = os.path.join(results_dir, f'{input_dir}_bss_RSA_profiles.pkl')
 
-    model_path = "./RSA_pred_model.h5"
+    model_path = "./OTHER/RSA_pred_model.h5"
 
     # Load data
     bss_data = pd.read_pickle(bss_data_out)
