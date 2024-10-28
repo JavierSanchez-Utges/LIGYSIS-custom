@@ -1,6 +1,6 @@
 # LIGYSIS pipeline for user job submission
 
-This repository contains a customised version of our original ligand site analysis [**LIGYSIS**](https://github.com/JavierSanchez-Utges/ligysis_dev) pipeline, which was employed to analyse all biologically relevant protien-ligand interactions on the PDBe, which results are served in the **LIGYSIS** [web server](https://www.compbio.dundee.ac.uk/ligysis/). The code for the web server can be found [here](https://github.com/JavierSanchez-Utges/ligysis_flask).
+This repository contains a customised version of our original ligand site analysis [**LIGYSIS**](https://github.com/JavierSanchez-Utges/LIGYSIS) pipeline, which was employed to analyse all biologically relevant protien-ligand interactions on the PDBe, which results are served in the **LIGYSIS** [web server](https://www.compbio.dundee.ac.uk/ligysis/). The code for the web server can be found [here](https://github.com/JavierSanchez-Utges/LIGYSIS-web).
 
 This customised version of **LIGYSIS** does not rely on the PDBe-KB and PDBe APIs, but instead processes from scratch any set of structures in <i>.pdb</i> or <i>.cif</i> formats, and is employed to process user jobs in the [LIGYSIS web server](https://www.compbio.dundee.ac.uk/ligysis/).
 
