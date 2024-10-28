@@ -82,8 +82,15 @@ pdbe-arpeggio -h
 # change directory to environments directory
 cd ligysis_custom/ENVS
 
-# install deep_learning environment
+# install DEEP_LEARNING environment
 conda env create -f DEEP_LEARNING.yml
+```
+
+### Installation of CLEAN_PDB environment
+
+```
+# install CLEAN_PDB environment
+conda create -n CLEAN_PDB python=2.7.15 biopython=1.74
 ```
 
 ## Installation of VarAlign
@@ -164,12 +171,12 @@ The configuration file can be found [here](ligysis_config.txt). It includes the 
 
 ## BINARIES
 
-stamp_bin = /path/to/stamp/stamp.4.4.2/bin/linux/stamp
-transform_bin = /path/to/stamp/stamp.4.4.2/bin/linux/transform
-clean_pdb_python_bin = /path/to/miniconda/envs/arpeggio/bin/python
+stamp_bin = /path/to/stamp.4.4.2/bin/linux/stamp
+transform_bin = /path/to/stamp.4.4.2/bin/linux/transform
+clean_pdb_python_bin = /path/to/miniconda/envs/CLEAN_PDB/bin/python
 clean_pdb_bin = /path/to/clean_pdb.py
-arpeggio_python_bin =/path/to/miniconda/envs/pdbe-arpeggio-env/bin/python
-arpeggio_bin = /path/to/miniconda/envs/pdbe-arpeggio-env/bin/pdbe-arpeggio
+arpeggio_python_bin =/path/to/miniconda/envs/ARPEGGIO/bin/python
+arpeggio_bin = /path/to/miniconda/envs/ARPEGGIO/bin/pdbe-arpeggio
 
 ## DATABASES
 
@@ -179,7 +186,7 @@ swissprot = /path/to/swissprot.fasta
 
 ## DIRECTORIES
 
-stampdir = /path/to/stamp/stamp.4.4.2/defs/
+stampdir = /path/to/stamp.4.4.2/defs/
 
 ### END OF CONFIG FILE ###
 ```
