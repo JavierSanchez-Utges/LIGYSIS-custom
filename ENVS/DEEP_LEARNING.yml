@@ -1,4 +1,4 @@
-name: DEEP_LEARNING_SHORT
+name: DEEP_LEARNING
 channels:
   - salilab
   - conda-forge

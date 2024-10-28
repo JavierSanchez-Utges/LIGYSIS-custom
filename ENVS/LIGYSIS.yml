@@ -1,4 +1,4 @@
-name: VARALIGN_NEW
+name: LIGYSIS
 dependencies:
 - hmmer=3.4
 - python=3
