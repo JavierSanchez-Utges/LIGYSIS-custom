@@ -1,6 +1,8 @@
 # LIGYSIS pipeline for user job submission
 
-This repository contains a customised version of our original ligand site analysis [**LIGYSIS**](https://github.com/JavierSanchez-Utges/ligysis_dev) pipeline, used for the analysis of protein-ligand complexes submitted to our **LIGYSIS** web server found [here](https://www.compbio.dundee.ac.uk/ligysis/). The code for the web server can be found [here](https://github.com/JavierSanchez-Utges/ligysis_flask).
+This repository contains a customised version of our original ligand site analysis [**LIGYSIS**](https://github.com/JavierSanchez-Utges/ligysis_dev) pipeline, which was employed to analyse all biologically relevant protien-ligand interactions on the PDBe, which results are served in the **LIGYSIS** [web server](https://www.compbio.dundee.ac.uk/ligysis/). The code for the web server can be found [here](https://github.com/JavierSanchez-Utges/ligysis_flask).
+
+This customised version of **LIGYSIS** does not rely on the PDBe-KB and PDBe APIs, but instead processes from scratch any set of structures in <i>.pdb</i> or <i>.cif</i> formats, and is employed to process user jobs in the [LIGYSIS web server](https://www.compbio.dundee.ac.uk/ligysis/).
 
 ## Pipeline methodology
 
@@ -54,10 +56,8 @@ The `ENVS` folder contains three `.yml` files describing the necessary packages 
   -  [LIGYSIS](ENVS/LIGYSIS.yml) is needed to run **LIGYSIS**.
     
   -  [DEEP_LEARNING](ENVS/DEEP_LEARNING.yml) contains the packages necessary to do predict the RSA Cluster labels and functional scores with [predict_rsa_labels.py](predict_rsa_labels.py).
-    
-  -  [arpeggio_env](envs/arpeggio_env.yml) contains Arpeggio. ???
 
-Note that there are no `.yml` files for the `DSSP`, `HMMER` and `ARPEGGIO` environments, as these are created from the command line without the need of a `.yml` file.
+Note that there are no `.yml` files for the `ARPEGGIO`, `CLEAN_PDB`, `DSSP`, `HMMER` environments, as these are created from the command line without the need of a `.yml` file.
 
 ## Installation
 
