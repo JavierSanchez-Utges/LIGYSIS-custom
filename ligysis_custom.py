@@ -123,7 +123,7 @@ interaction_to_color = { # following Arpeggio's colour scheme
     'weak_polar': '#fc7600',
 }
 
-bss_colors = load_pickle("./sample_colors_hex.pkl") # sample colors
+bss_colors = load_pickle("./colors.pkl") # sample colors
 
 headings = ["ID", "RSA", "DS", "MES", "Size", "Cluster", "FS"]
 
