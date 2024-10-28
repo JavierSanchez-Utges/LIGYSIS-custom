@@ -23,7 +23,7 @@ The pipeline can be summarised in the following steps:
 13. Missense enrichment score calculation with [VarAlign](https://github.com/bartongroup/SM_varalign) [[3](https://www.biorxiv.org/content/10.1101/127050v2), [4](https://onlinelibrary.wiley.com/doi/full/10.1002/pro.3783), [5](https://www.nature.com/articles/s42003-024-06117-5)].
 14. RSA-based clustering label and functional score calculation [[6](https://www.nature.com/articles/s42003-024-05970-8)].
 
-**Note:** this is done on a separate script: [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py), which requires a different environment due to dependencies crashing. This programme must be executed on the `deep_learning_env` [environment]().
+**Note:** this is done on a separate script: [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/ligysis_custom/blob/revamped/predict_rsa_labels.py), which requires a different environment due to dependencies crashing. This programme must be executed on the `DEEP_LEAERNING` [environment](https://github.com/JavierSanchez-Utges/ligysis_custom/blob/revamped/ENVS/DEEP_LEARNING.yml).
 
 The final output of the pipeline consists of multiple tables collating the results from the different steps of the analysis for each residue, and for the defined ligand binding sites. These data include relative solvent accessibility (RSA), secondary structure, PDB/UniProt residue number, alignment column, divergence score, missense enrichment score, p-value, etc.
 
@@ -50,12 +50,14 @@ For more information on the dependencies, refer to the .yml files in the [`ENVS`
 
 ## Environments
 
-The envs folder contains three .yml files describing the necessary packages and dependencies for the different parts of the pipeline and analysis.
+The `ENVS` folder contains three `.yml` files describing the necessary packages and dependencies for the different parts of the pipeline and analysis.
   -  [arpeggio_env](envs/arpeggio_env.yml) contains Arpeggio. ???
     
-  -  [deep_learning_env](envs/deep_learning_env.yml) contains the packages necessary to do predict the RSA Cluster labels and functional scores with [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py).
+  -  [DEEP_LEARNING](ENVS/DEEP_LEARNING.yml) contains the packages necessary to do predict the RSA Cluster labels and functional scores with [predict_rsa_labels.py](https://github.com/JavierSanchez-Utges/fragsys_custom/blob/revamped/predict_rsa_labels.py).
     
-  -  [varalign_env](envs/varalign_env.yml) is needed to run **LIGYSIS<sub>CUSTOM</sub>**.
+  -  [LIGYSIS](ENVS/LIGYSIS.yml) is needed to run **LIGYSIS**.
+
+Note that there are no `.yml` files for the `DSSP`, `HMMER` and `ARPEGGIO` environments, as these are created from the command line without the need of a `.yml` file.
 
 ## Installation
 
@@ -121,13 +123,13 @@ After downloading gnomAD, it is required to run VEP on it, as VarAlign uses its 
 
 ## Execution
 
-**LIGYSIS<sub>CUSTOM</sub>** can be run like this:
+**LIGYSIS** can be run like this:
 
 ```sh
-python fragsys_custom.py IN/Q9UGL1_cif Q9UGL1 pdb
+python ligysis_custom.py IN/Q9UGL1_cif Q9UGL1 pdb
 ```
 
-This needs to be done within the `varalign-env-py3` [environment]().
+This needs to be done within the `LIGYSIS` [environment](ENVS/LIGYSIS.yml).
 
 The programme uses relative paths, so it is recommended to run it in the repository directory, where it can directly read from `./IN` and write output to `./OUT` (you need to create this second directory).
 
@@ -151,13 +153,13 @@ This script only requires a single mandatory argument, which is `input_dir` the 
 To get help or information about the **LIGYSIS<sub>CUSTOM</sub>** pipeline, run:
 
 ```sh
-python fragsys_custom.py -h
+python ligysis_custom.py -h
 ```
 
 which will print the manual of the programme:
 
 ```
-usage: fragsys_custom.py [-h] [--override] [--override_variants] [--variants]
+usage: ligysis_custom.py [-h] [--override] [--override_variants] [--variants]
                          [--clust_method CLUST_METHOD]
                          [--clust_dist CLUST_DIST] [--hmm_iters HMM_ITERS]
                          [--cons_thresh_high CONS_THRESH_HIGH]
