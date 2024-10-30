@@ -112,7 +112,7 @@ To carry out the last step and add the RSA-derived Cluster labels and functional
 python predict_rsa_labels.py Q9UGL1_cif
 ```
 
-This script only requires a single mandatory argument, which is `input_dir` the name of the input directory. From this `input_dir`, the programme will find the relevant files in the `./OUT` directory. In this example, it is `Q9UGL1_cif`. This script will use a [multilayer perceptron model](RSA_pred_model.h5) [[6](https://www.nature.com/articles/s42003-024-05970-8)] to predict RSA-based Cluster labels and functional scores for each defined binding site. 
+This script only requires a single mandatory argument, which is `input_dir` the name of the input directory. From this `input_dir`, the programme will find the relevant files in the `./OUT` directory. In this example, it is `Q9UGL1_cif`. This script will use a [multilayer perceptron model](OTHER/RSA_pred_model.h5) [[6](https://www.nature.com/articles/s42003-024-05970-8)] to predict RSA-based Cluster labels and functional scores for each defined binding site. 
 
 ## Help and manual
 
